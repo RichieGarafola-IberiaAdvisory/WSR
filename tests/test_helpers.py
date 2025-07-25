@@ -64,15 +64,28 @@ def test_get_or_create_employee_existing():
     assert result == 1
     assert mock_conn.execute.call_count >= 2  # select + update(s)
 
+
 def test_get_or_create_employee_insert_new():
     mock_conn = MagicMock()
+
+    # Define a fake table with `c` attribute (columns)
+    mock_employees = MagicMock()
+    mock_employees.c.uniquekey = MagicMock()
+    mock_employees.c.employeeid = MagicMock()
+    mock_employees.update.return_value = MagicMock()
+    mock_employees.insert.return_value.returning.return_value = MagicMock()
+
+    # Setup mock responses
     mock_conn.execute.side_effect = [
-        MagicMock(mappings=lambda: MagicMock(fetchone=lambda: None)),  # not found
-        MagicMock(scalar_one=lambda: 5),  # insert returns ID
-        None  # update publicid
+        MagicMock(mappings=lambda: MagicMock(fetchone=lambda: None)),  # SELECT returns nothing
+        MagicMock(scalar_one=lambda: 5),                                # INSERT returns ID
+        None                                                            # UPDATE publicid
     ]
 
-    result = helpers.get_or_create_employee(mock_conn, "Jane Smith", "VendorY", "Engineer")
+    result = helpers.get_or_create_employee(
+        mock_conn, "Jane Smith", "VendorY", "Engineer", employees_table=mock_employees
+    )
+
     assert result == 5
 
 # -------------------------------
@@ -86,14 +99,19 @@ def test_get_or_create_workstream_existing():
 
 def test_get_or_create_workstream_insert_new():
     mock_conn = MagicMock()
+
+    mock_ws = MagicMock()
+    mock_ws.c.workstreamid = MagicMock()
+    mock_ws.c.name = MagicMock()
+    mock_ws.insert.return_value.returning.return_value = MagicMock()
+
     mock_conn.execute.side_effect = [
-        MagicMock(scalar_one_or_none=lambda: None),
-        MagicMock(scalar_one=lambda: 7)
+        MagicMock(scalar_one_or_none=lambda: None),  # SELECT returns nothing
+        MagicMock(scalar_one=lambda: 7)              # INSERT returns new ID
     ]
-    result = helpers.get_or_create_workstream(mock_conn, "Innovation Lab")
+
+    result = helpers.get_or_create_workstream(mock_conn, "Innovation Lab", workstreams_table=mock_ws)
     assert result == 7
-
-
 
 
 # Mock the employees table
