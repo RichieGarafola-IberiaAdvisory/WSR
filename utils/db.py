@@ -1,10 +1,17 @@
 # Every page can simply from utils.db import engine, employees, workstreams, weekly_reports, accomplishments, hours tracking
 # Avoids repeating schema reflection and config.
 
+import os
 from sqlalchemy import create_engine, MetaData
+from dotenv import load_dotenv
 
-# Use direct connection string (as per your instruction)
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/Iberia_BackOffice"
+# Load variables from .env
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL not set in .env file.")
+    
 
 # Create engine and reflect schema metadata
 engine = create_engine(DATABASE_URL, echo=False)
