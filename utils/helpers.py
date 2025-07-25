@@ -48,7 +48,7 @@ def get_or_create_employee(conn, contractor_name, vendor=None, laborcategory=Non
 
     # Look up by unique hash
     emp = conn.execute(
-        select(employees).where(employees.c.uniquekey == uniquekey)
+        select(employees_table).where(employees_table.c.uniquekey == uniquekey)
     ).mappings().fetchone()
 
     if emp:
@@ -111,8 +111,8 @@ def get_or_create_workstream(conn, workstream_name):
     normalized_name = normalize_text(workstream_name)
 
     ws = conn.execute(
-        select(workstreams.c.workstreamid).where(
-            func.lower(workstreams.c.name) == normalized_name.lower()
+        select(workstreams_table.c.workstreamid).where(
+            func.lower(workstreams_table.c.name) == normalized_name.lower()
         )
     ).scalar_one_or_none()
 
