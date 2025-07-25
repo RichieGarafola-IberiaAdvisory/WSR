@@ -29,7 +29,8 @@ jobs:
       run: |
         echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
         echo "DATABASE_URL=postgresql://fakeuser:fakepass@localhost:5432/fakedb" >> $GITHUB_ENV
-
+        echo "CI=true" >> $GITHUB_ENV
+    
     - name: 🧪 Run tests
       run: |
         pytest
