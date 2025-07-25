@@ -6,7 +6,7 @@ import plotly.express as px  # For creating visualizations
 import re  # For text cleaning using regular expressions
 
 # Import shared modules
-from utils.db import engine, employees, weekly_reports, hourstracking, accomplishments
+from utils.db import engine, load_tables, employees, workstreams, weekly_reports, accomplishments, hourstracking
 from utils.queries import weekly_reports_with_employees
 from utils.helpers import (
     get_most_recent_monday,
@@ -16,6 +16,8 @@ from utils.helpers import (
     normalize_text
 )
 
+# Load global tables
+load_tables()
 
 ############################
 # --- Page Configuration ---
