@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, MetaData, Table, select, insert, func  # F
 from datetime import date, timedelta  # For working with dates
 
 # Import shared modules
-from utils.db import engine, employees, weekly_reports, hourstracking, accomplishments
+from utils.db import engine, employees, weekly_reports, hourstracking, accomplishments, load_tables
 from utils.helpers import (
     get_most_recent_monday,
     get_or_create_employee,
@@ -16,6 +16,8 @@ from utils.helpers import (
     normalize_text
 )
 
+# Load global tables
+load_tables()
 ####################
 # --- Page Setup ---
 ####################
