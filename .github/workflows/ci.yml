@@ -25,9 +25,10 @@ jobs:
         pip install -r requirements.txt
         pip install pytest
 
-    - name: ➕ Add project to PYTHONPATH
+    - name: ➕ Add project to PYTHONPATH and env
       run: |
         echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
+        echo "DATABASE_URL=postgresql://fakeuser:fakepass@localhost:5432/fakedb" >> $GITHUB_ENV
 
     - name: 🧪 Run tests
       run: |
