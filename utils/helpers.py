@@ -126,7 +126,8 @@ def get_most_recent_monday():
 
 
 def get_or_create_employee(conn, contractor_name, vendor=None, laborcategory=None, employees_table=None):
-    employees_table = employees_table or employees
+    if employees_table is None:
+        employees_table = employees
 
     contractor_name = contractor_name.strip()
     if not contractor_name:
@@ -148,29 +149,38 @@ def get_or_create_employee(conn, contractor_name, vendor=None, laborcategory=Non
         if not emp["laborcategory"]:
             updates["laborcategory"] = laborcategory
         if updates:
-            conn.execute(employees_table.update().where(employees_table.c.employeeid == emp_id).values(**updates))
+            conn.execute(
+                employees_table.update()
+                .where(employees_table.c.employeeid == emp_id)
+                .values(**updates)
+            )
         return emp_id
 
     result = conn.execute(
-        employees_table.insert().values(
+        employees_table.insert()
+        .values(
             name=contractor_name,
             vendorname=vendor,
             laborcategory=laborcategory,
             uniquekey=uniquekey
-        ).returning(employees_table.c.employeeid)
+        )
+        .returning(employees_table.c.employeeid)
     )
     emp_id = result.scalar_one()
 
     public_id = f"E{emp_id:04d}"
     conn.execute(
-        employees_table.update().where(employees_table.c.employeeid == emp_id).values(publicid=public_id)
+        employees_table.update()
+        .where(employees_table.c.employeeid == emp_id)
+        .values(publicid=public_id)
     )
 
     return emp_id
 
 
 def get_or_create_workstream(conn, workstream_name, workstreams_table=None):
-    workstreams_table = workstreams_table or workstreams
+    if workstreams_table is None:
+        workstreams_table = workstreams
 
     workstream_name = workstream_name.strip()
     if not workstream_name:
@@ -188,12 +198,12 @@ def get_or_create_workstream(conn, workstream_name, workstreams_table=None):
         return ws
 
     result = conn.execute(
-        workstreams_table.insert().values(name=normalized_name).returning(workstreams_table.c.workstreamid)
+        workstreams_table.insert()
+        .values(name=normalized_name)
+        .returning(workstreams_table.c.workstreamid)
     )
 
     return result.scalar_one()
-
-
 
 
 def clean_dataframe_dates_hours(df, date_cols, numeric_cols):
