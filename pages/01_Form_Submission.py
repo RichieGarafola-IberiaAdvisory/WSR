@@ -16,8 +16,7 @@ from utils.helpers import (
     normalize_text
 )
 
-# Load global tables
-load_tables()
+
 ####################
 # --- Page Setup ---
 ####################
@@ -31,6 +30,8 @@ st.set_page_config(
 # Display logo at top of app (ensure image path points to valid directory)
 st.image("images/Iberia-Advisory.png", width=250)
 
+# Load global tables
+load_tables()
 ####################################
 # --- Page Title and Description ---
 ####################################
