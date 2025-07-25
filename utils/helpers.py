@@ -4,7 +4,9 @@ from datetime import date, timedelta
 from sqlalchemy import select, insert, func
 import hashlib
 
-from utils.db import employees, workstreams, hourstracking, employees
+from utils.db import employees, workstreams, hourstracking, employees, load_tables
+
+load_tables()
 
 def get_most_recent_monday():
     """
