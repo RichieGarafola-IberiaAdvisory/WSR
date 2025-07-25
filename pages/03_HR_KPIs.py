@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, MetaData, Table, select, join  # For datab
 import pandas as pd  # For working with tabular data
 import plotly.express as px  # For generating interactive charts
 
-from utils.db import engine, employees, weekly_reports
+from utils.db import engine, employees, weekly_reports, load_tables
 from utils.helpers import normalize_text
 
 ############################
@@ -15,6 +15,9 @@ st.set_page_config(
      page_title="HR Dashboard", 
      # wide layout for more screen space
      layout="wide")
+
+# Load global tables
+load_tables()
 
 #######################
 # --- Logo Display ---
