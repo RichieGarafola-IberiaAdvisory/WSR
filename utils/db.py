@@ -11,9 +11,35 @@ engine = create_engine(DATABASE_URL, echo=False)
 metadata = MetaData()
 metadata.reflect(bind=engine)
 
-# Table references (lazy-loaded)
-employees = metadata.tables["employees"]
-workstreams = metadata.tables["workstreams"]
-weekly_reports = metadata.tables["weeklyreports"]
-accomplishments = metadata.tables["accomplishments"]
-hourstracking = metadata.tables["hourstracking"]
+_engine = None
+_metadata = None
+_tables = {}
+
+def get_engine():
+    global _engine
+    if _engine is None:
+        _engine = create_engine(DATABASE_URL, echo=False)
+    return _engine
+
+def get_metadata():
+    global _metadata
+    if _metadata is None:
+        _metadata = MetaData()
+        _metadata.reflect(bind=get_engine())
+    return _metadata
+
+def get_table(name):
+    meta = get_metadata()
+    if name not in meta.tables:
+        raise KeyError(f"Table '{name}' not found in database.")
+    if name not in _tables:
+        _tables[name] = meta.tables[name]
+    return _tables[name]
+
+
+# Shortcut variables table references (lazy-loaded)
+employees = lambda: get_table("employees")
+workstreams = lambda: get_table("workstreams")
+weekly_reports = lambda: get_table("weeklyreports")
+accomplishments = lambda: get_table("accomplishments")
+hourstracking = lambda: get_table("hourstracking")
