@@ -1,13 +1,16 @@
 import pandas as pd
 import re
+import os
 from datetime import date, timedelta
 from sqlalchemy import select, insert, func
 import hashlib
 
-from utils.db import employees, workstreams, hourstracking, employees, load_tables
+from utils.db import employees, workstreams, hourstracking, employees
 
-load_tables()
-
+if os.getenv("CI") != "true":  # Skip this in CI
+    from utils.db import load_tables
+    load_tables()
+    
 def get_most_recent_monday():
     """
     Returns the most recent Monday from today's date.
