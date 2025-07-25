@@ -16,8 +16,7 @@ from utils.helpers import (
     normalize_text
 )
 
-# Load global tables
-load_tables()
+
 
 ############################
 # --- Page Configuration ---
@@ -28,6 +27,8 @@ st.set_page_config(
     # wide layout for more screen space
     layout="wide")
 
+# Load global tables
+load_tables()
 #######################
 # --- Logo Display ---
 #######################
