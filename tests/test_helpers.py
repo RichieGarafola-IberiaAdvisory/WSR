@@ -1,6 +1,7 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 from utils import helpers
+from sqlalchemy import Table, Column, Integer, String, MetaData
 
 # -------------------------------
 # normalize_text
@@ -91,3 +92,28 @@ def test_get_or_create_workstream_insert_new():
     ]
     result = helpers.get_or_create_workstream(mock_conn, "Innovation Lab")
     assert result == 7
+
+
+
+
+# Mock the employees table
+mock_employees = Table("employees", MetaData(), 
+    Column("employeeid", Integer),
+    Column("vendorname", String),
+    Column("laborcategory", String),
+    Column("uniquekey", String),
+)
+
+def test_get_or_create_employee_existing():
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.mappings.return_value.fetchone.return_value = {
+        "employeeid": 1,
+        "vendorname": "",
+        "laborcategory": "Unknown LCAT"
+    }
+
+    result = helpers.get_or_create_employee(
+        mock_conn, "John Doe", "VendorX", "Manager", employees_table=mock_employees
+    )
+    assert result == 1
+    
