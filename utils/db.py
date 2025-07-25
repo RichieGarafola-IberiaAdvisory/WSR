@@ -38,8 +38,8 @@ def get_table(name):
 
 
 # Shortcut variables table references (lazy-loaded)
-employees = lambda: get_table("employees")
-workstreams = lambda: get_table("workstreams")
-weekly_reports = lambda: get_table("weeklyreports")
-accomplishments = lambda: get_table("accomplishments")
-hourstracking = lambda: get_table("hourstracking")
+employees = get_table("employees")
+workstreams = get_table("workstreams")
+weekly_reports = get_table("weeklyreports")
+accomplishments = get_table("accomplishments")
+hourstracking = get_table("hourstracking")
