@@ -1,5 +1,6 @@
 import pytest
-from unittest.mock import MagicMock, Mock
+import pandas as pd
+from unittest.mock import MagicMock
 from utils import helpers
 from sqlalchemy import Table, Column, Integer, String, MetaData
 
@@ -36,8 +37,6 @@ def test_generate_public_id_one_part_name():
 # -------------------------------
 # clean_dataframe_dates_hours
 # -------------------------------
-import pandas as pd
-
 def test_clean_dataframe_dates_hours():
     df = pd.DataFrame({
         "d1": ["2024-01-01", "bad date", None],
@@ -49,33 +48,50 @@ def test_clean_dataframe_dates_hours():
     assert cleaned["n1"].iloc[1] == 0  # bad value becomes 0
 
 # -------------------------------
+# Fake Tables
+# -------------------------------
+def make_fake_employees_table():
+    metadata = MetaData()
+    return Table("employees", metadata,
+        Column("employeeid", Integer),
+        Column("vendorname", String),
+        Column("laborcategory", String),
+        Column("uniquekey", String),
+        Column("name", String),
+        Column("publicid", String),
+    )
+
+def make_fake_workstreams_table():
+    metadata = MetaData()
+    return Table("workstreams", metadata,
+        Column("workstreamid", Integer),
+        Column("name", String),
+    )
+
+# -------------------------------
 # get_or_create_employee
 # -------------------------------
 def test_get_or_create_employee_existing():
     mock_conn = MagicMock()
+    fake_table = make_fake_employees_table()
+
     mock_conn.execute.return_value.mappings.return_value.fetchone.return_value = {
         "employeeid": 1,
         "vendorname": "",
         "laborcategory": "Unknown LCAT"
     }
 
-    result = helpers.get_or_create_employee(mock_conn, "John Doe", "VendorX", "Manager")
+    result = helpers.get_or_create_employee(
+        mock_conn, "John Doe", "VendorX", "Manager", employees_table=fake_table
+    )
 
     assert result == 1
-    assert mock_conn.execute.call_count >= 2  # select + update(s)
-
+    assert mock_conn.execute.call_count >= 2
 
 def test_get_or_create_employee_insert_new():
     mock_conn = MagicMock()
+    fake_table = make_fake_employees_table()
 
-    # Define a fake table with `c` attribute (columns)
-    mock_employees = MagicMock()
-    mock_employees.c.uniquekey = MagicMock()
-    mock_employees.c.employeeid = MagicMock()
-    mock_employees.update.return_value = MagicMock()
-    mock_employees.insert.return_value.returning.return_value = MagicMock()
-
-    # Setup mock responses
     mock_conn.execute.side_effect = [
         MagicMock(mappings=lambda: MagicMock(fetchone=lambda: None)),  # SELECT returns nothing
         MagicMock(scalar_one=lambda: 5),                                # INSERT returns ID
@@ -83,7 +99,7 @@ def test_get_or_create_employee_insert_new():
     ]
 
     result = helpers.get_or_create_employee(
-        mock_conn, "Jane Smith", "VendorY", "Engineer", employees_table=mock_employees
+        mock_conn, "Jane Smith", "VendorY", "Engineer", employees_table=fake_table
     )
 
     assert result == 5
@@ -93,45 +109,21 @@ def test_get_or_create_employee_insert_new():
 # -------------------------------
 def test_get_or_create_workstream_existing():
     mock_conn = MagicMock()
+    fake_ws = make_fake_workstreams_table()
+
     mock_conn.execute.return_value.scalar_one_or_none.return_value = 3
-    result = helpers.get_or_create_workstream(mock_conn, "Data Ops")
+
+    result = helpers.get_or_create_workstream(mock_conn, "Data Ops", workstreams_table=fake_ws)
     assert result == 3
 
 def test_get_or_create_workstream_insert_new():
     mock_conn = MagicMock()
-
-    mock_ws = MagicMock()
-    mock_ws.c.workstreamid = MagicMock()
-    mock_ws.c.name = MagicMock()
-    mock_ws.insert.return_value.returning.return_value = MagicMock()
+    fake_ws = make_fake_workstreams_table()
 
     mock_conn.execute.side_effect = [
         MagicMock(scalar_one_or_none=lambda: None),  # SELECT returns nothing
         MagicMock(scalar_one=lambda: 7)              # INSERT returns new ID
     ]
 
-    result = helpers.get_or_create_workstream(mock_conn, "Innovation Lab", workstreams_table=mock_ws)
+    result = helpers.get_or_create_workstream(mock_conn, "Innovation Lab", workstreams_table=fake_ws)
     assert result == 7
-
-
-# Mock the employees table
-mock_employees = Table("employees", MetaData(), 
-    Column("employeeid", Integer),
-    Column("vendorname", String),
-    Column("laborcategory", String),
-    Column("uniquekey", String),
-)
-
-def test_get_or_create_employee_existing():
-    mock_conn = MagicMock()
-    mock_conn.execute.return_value.mappings.return_value.fetchone.return_value = {
-        "employeeid": 1,
-        "vendorname": "",
-        "laborcategory": "Unknown LCAT"
-    }
-
-    result = helpers.get_or_create_employee(
-        mock_conn, "John Doe", "VendorX", "Manager", employees_table=mock_employees
-    )
-    assert result == 1
-    
