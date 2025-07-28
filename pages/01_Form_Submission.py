@@ -3,11 +3,12 @@
 # Import required libraries
 import streamlit as st  # Used to build the interactive web app
 import pandas as pd  # Used for working with tabular data
-from sqlalchemy import create_engine, MetaData, Table, select, insert, func  # For database operations
-from datetime import date, datetime, timedelta  # For working with dates
+from sqlalchemy import insert  # For database operations
+from datetime import datetime  # For working with dates
 
 # Import shared modules
-from utils.db import engine, employees, weekly_reports, hourstracking, accomplishments
+from utils.db import get_engine, employees, weekly_reports, hourstracking, accomplishments
+
 from utils.helpers import (
     get_most_recent_monday,
     get_or_create_employee,
@@ -109,31 +110,23 @@ weekly_df = st.data_editor(
 ######################################
 
 if st.button("📤 Submit Weekly Reports"):
-    # Remove entirely empty rows
     cleaned_df = weekly_df.dropna(how="all")
     if cleaned_df.empty:
         st.warning("Please fill at least one row before submitting.")
     else:
         try:
-            # Rename columns to match database column names
             cleaned_df = cleaned_df.rename(columns=weekly_report_col_map)
-            
-            # Ensure dates and hours are properly formatted
             cleaned_df = clean_dataframe_dates_hours(
                 cleaned_df,
                 date_cols=["weekstartdate", "datecompleted"],
                 numeric_cols=["hoursworked"]
             )
-            # Compute effort percentage
             cleaned_df["effortpercentage"] = (cleaned_df["hoursworked"] / 40) * 100
 
-            # Begin database transaction
-            with engine.begin() as conn:
+            with get_engine().begin() as conn:
                 for _, row in cleaned_df.iterrows():
                     contractor = normalize_text(row.get("contractorname", ""))
                     if not contractor:
-                        
-                        # Skip empty contractors
                         continue
 
                     employee_id = get_or_create_employee(
@@ -143,54 +136,44 @@ if st.button("📤 Submit Weekly Reports"):
                         laborcategory=normalize_text(row.get("laborcategory", ""))
                     )
 
-                    # Insert Weekly Report
                     conn.execute(
                         insert(weekly_reports).values(
-                            employeeid=employee_id,
-                            weekstartdate=row["weekstartdate"],
-                            divisioncommand=normalize_text(row.get("divisioncommand", "")),
-                            workproducttitle=normalize_text(row.get("workproducttitle", "")),
-                            contributiondescription=normalize_text(row.get("contributiondescription", "")),
-                            status=normalize_text(row.get("status", "")),
-                            plannedorunplanned=row.get("plannedorunplanned", "").strip().lower(),
-                            datecompleted=row["datecompleted"],
-                            distinctnfr=normalize_text(row.get("distinctnfr", "")),
-                            distinctcap=normalize_text(row.get("distinctcap", "")),
-                            effortpercentage=row["effortpercentage"],
-                            contractorname=contractor,
-                            govttaname=normalize_text(row.get("govttaname", "")),
-                            
-                            
-#                             # Audit fields
-#                             created_at=datetime.utcnow(),
-#                             entered_by=st.session_state.get("username", "anonymous"),  # or a fallback string
-#                             source_file="manual_form_submission"
+                            EmployeeID=employee_id,
+                            WeekStartDate=row["weekstartdate"],
+                            DivisionCommand=normalize_text(row.get("divisioncommand", "")),
+                            WorkProductTitle=normalize_text(row.get("workproducttitle", "")),
+                            ContributionDescription=normalize_text(row.get("contributiondescription", "")),
+                            Status=normalize_text(row.get("status", "")),
+                            PlannedOrUnplanned=row.get("plannedorunplanned", "").strip().lower(),
+                            DateCompleted=row["datecompleted"],
+                            DistinctNFR=normalize_text(row.get("distinctnfr", "")),
+                            DistinctCAP=normalize_text(row.get("distinctcap", "")),
+                            EffortPercentage=row["effortpercentage"],
+                            ContractorName=contractor,
+                            GovtTAName=normalize_text(row.get("govttaname", "")),
                         )
                     )
 
-                    # Insert Hours Tracking
                     if row["hoursworked"] > 0:
                         conn.execute(
                             insert(hourstracking).values(
-                                employeeid=employee_id,
-                                workstreamid=None,
-                                reportingweek=row["weekstartdate"],
-                                hoursworked=row["hoursworked"],
-                                levelofeffort=row["effortpercentage"],
-                                
-#                                 # Audit fields
-#                                 created_at=datetime.utcnow(),
-#                                 entered_by=st.session_state.get("username", "anonymous"),
-#                                 source_file="manual_form_submission"
-                            ))
+                                EmployeeID=employee_id,
+                                WorkstreamID=None,
+                                ReportingWeek=row["weekstartdate"],
+                                HoursWorked=row["hoursworked"],
+                                LevelOfEffort=row["effortpercentage"],
+                            )
+                        )
+
 
             st.success("✅ Weekly Reports submitted successfully!")
-            # Show the submitted data
             with st.expander("View Submitted Data"):
                 st.dataframe(cleaned_df)
 
         except Exception as e:
             st.error(f"❌ Error inserting weekly reports: {e}")
+
+
 
 ##################################
 # --- Accomplishments Section ---
@@ -231,7 +214,7 @@ if st.button("Submit Accomplishments"):
             df = cleaned_accom_df.rename(columns=accomplishments_col_map)
 
             # Start DB transaction
-            with engine.begin() as conn:
+            with get_engine().begin() as conn:
                 for _, row in df.iterrows():
                     contractor = normalize_text(row.get("name", ""))
                     if not contractor:
@@ -248,11 +231,10 @@ if st.button("Submit Accomplishments"):
                         text = normalize_text(row.get(f"accomplishment_{i}", ""))
                         if text:
                             conn.execute(insert(accomplishments).values(
-                                employeeid=employee_id,
-                                workstreamid=workstream_id,
-                                daterange=week_str,
-                                description=text,
-                                
+                                EmployeeID=employee_id,
+                                WorkstreamID=workstream_id,
+                                DateRange=week_str,
+                                Description=text,
                                 
                                 # # Audit fields
                                 # created_at=datetime.utcnow(),

@@ -1,10 +1,11 @@
 # Import required libraries
 import streamlit as st  # Used for building the web app
-from sqlalchemy import create_engine, MetaData, Table, select, join  # For database connections
+from sqlalchemy import select, join  # For database connections
 import pandas as pd  # For working with tabular data
 import plotly.express as px  # For generating interactive charts
 
-from utils.db import engine, employees, weekly_reports
+
+from utils.db import get_engine, employees, weekly_reports
 from utils.helpers import normalize_text
 
 ############################
@@ -36,27 +37,35 @@ st.caption("Track contractor activity, coverage, and labor category distribution
 @st.cache_data(ttl=600)
 def load_hr_data():
     # Join weekly reports and employees on employee ID
-    j = join(weekly_reports, employees, weekly_reports.c.employeeid == employees.c.employeeid)
-    stmt = select(weekly_reports, employees.c.laborcategory).select_from(j)
+    j = join(
+        weekly_reports, 
+        employees, 
+        weekly_reports.c.EmployeeID == employees.c.EmployeeID
+    )
+    
+    stmt = select(
+        weekly_reports,
+        employees.c.LaborCategory
+    ).select_from(j)
 
     # Execute query and load into DataFrame
-    with engine.connect() as conn:
+    with get_engine().connect() as conn:
         df = pd.DataFrame(conn.execute(stmt).fetchall(), columns=stmt.columns.keys())
 
     # Rename columns for clarity
     df.rename(columns={
-        'weekstartdate': 'Reporting Week',
-        'datecompleted': 'If Completed, Date Completed',
-        'status': 'Work Product Status',
-        'plannedorunplanned': 'Planned or Unplanned',
-        'effortpercentage': 'Level of Effort (%)',
-        'contractorname': 'Contractor (Last Name, First Name)',
-        'workproducttitle': 'Work Product Title',
-        'divisioncommand': 'Division/Command',
-        'govttaname': 'Govt TA (Last Name, First Name)',
-        'distinctnfr': 'Distinct NFR',
-        'distinctcap': 'Distinct CAP',
-        'laborcategory': 'Labor Category'
+        'WeekStartDate': 'Reporting Week',
+        'DateCompleted': 'If Completed, Date Completed',
+        'Status': 'Work Product Status',
+        'PlannedOrUnplanned': 'Planned or Unplanned',
+        'EffortPercentage': 'Level of Effort (%)',
+        'ContractorName': 'Contractor (Last Name, First Name)',
+        'WorkProductTitle': 'Work Product Title',
+        'DivisionCommand': 'Division/Command',
+        'GovtTAName': 'Govt TA (Last Name, First Name)',
+        'DistinctNFR': 'Distinct NFR',
+        'DistinctCAP': 'Distinct CAP',
+        'LaborCategory': 'Labor Category'
     }, inplace=True)
 
     return df

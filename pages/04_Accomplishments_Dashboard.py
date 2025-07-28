@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from sqlalchemy import select, join
-
-from utils.db import engine, employees, accomplishments, workstreams
+from utils.db import get_engine, employees, accomplishments, workstreams
 from utils.helpers import normalize_text
 
 # ----------------------------
@@ -20,21 +19,21 @@ st.caption("Explore weekly accomplishments across teams and workstreams.")
 def load_accomplishments():
     j = join(
         accomplishments,
-        employees, accomplishments.c.employeeid == employees.c.employeeid
+        employees, accomplishments.c.EmployeeID == employees.c.EmployeeID
     ).join(
-        workstreams, accomplishments.c.workstreamid == workstreams.c.workstreamid
+        workstreams, accomplishments.c.WorkstreamID == workstreams.c.WorkstreamID
     )
 
     stmt = select(
-        accomplishments.c.daterange,
-        accomplishments.c.description,
-        employees.c.name.label("Contractor"),
-        employees.c.vendorname.label("Vendor"),
-        employees.c.laborcategory.label("Labor Category"),
-        workstreams.c.name.label("Workstream")
+        accomplishments.c.DateRange,
+        accomplishments.c.Description,
+        employees.c.Name.label("Contractor"),
+        employees.c.VendorName.label("Vendor"),
+        employees.c.LaborCategory.label("Labor Category"),
+        workstreams.c.Name.label("Workstream")
     ).select_from(j)
 
-    with engine.connect() as conn:
+    with get_engine().connect() as conn:
         df = pd.DataFrame(conn.execute(stmt).fetchall(), columns=stmt.columns.keys())
     return df
 
@@ -43,8 +42,8 @@ df = load_accomplishments()
 # ----------------------------
 # Input Normalization
 # ----------------------------
-df["Reporting Week"] = pd.to_datetime(df["daterange"], errors="coerce")
-df["Accomplishment"] = df["description"].astype(str).apply(normalize_text)
+df["Reporting Week"] = pd.to_datetime(df["DateRange"], errors="coerce")
+df["Accomplishment"] = df["Description"].astype(str).apply(normalize_text)
 df["Contractor"] = df["Contractor"].astype(str).apply(normalize_text)
 df["Workstream"] = df["Workstream"].astype(str).apply(normalize_text)
 
@@ -97,12 +96,19 @@ v1, v2 = st.columns(2)
 with v1:
     st.subheader("Accomplishments by Workstream")
     workstream_counts = filtered_df["Workstream"].value_counts()
-    st.bar_chart(workstream_counts)
+    if workstream_counts.empty:
+        st.info("No data available for selected filters.")
+    else:
+        st.bar_chart(workstream_counts)
 
 with v2:
     st.subheader("Top Contractors by Accomplishment Count")
     contractor_counts = filtered_df["Contractor"].value_counts()
-    st.bar_chart(contractor_counts)
+    if contractor_counts.empty:
+        st.info("No data available for selected filters.")
+    else:
+        st.bar_chart(contractor_counts)
+
 
 # ----------------------------
 # Accomplishments Table

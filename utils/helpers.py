@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from sqlalchemy import select, insert, func
 import hashlib
 
-from utils.db import employees, workstreams, hourstracking, employees
+from utils.db import employees, workstreams, hourstracking
 
 def get_most_recent_monday():
     """
@@ -19,20 +19,24 @@ def get_most_recent_monday():
 
 def get_or_create_employee(conn, contractor_name, vendor=None, laborcategory=None):
     """
-    Retrieves an existing employee by their unique (name + vendor) key,
-    or inserts a new one if not found. Ensures vendor and labor category are backfilled,
-    and assigns a public ID if newly inserted.
+    Retrieves an existing employee from the Employees table or inserts a new one if not found.
+
+    - Checks for an existing employee using a deterministic UniqueKey 
+      (SHA-256 hash of contractor name + vendor).
+    - If found, returns the existing EmployeeID (avoids duplicate inserts).
+    - If not found, inserts a new employee, generates a public ID, and returns the new EmployeeID.
+    - Ensures vendor and labor category values are stored with defaults if missing.
 
     Args:
-        conn (Connection): SQLAlchemy database connection.
-        contractor_name (str): Full name of the employee.
+        conn (Connection): Active SQLAlchemy database connection.
+        contractor_name (str): Full name of the employee (required).
         vendor (str, optional): Vendor/company name. Defaults to "Unknown Vendor".
-        laborcategory (str, optional): Job title or labor category. Defaults to "Unknown LCAT".
+        laborcategory (str, optional): Labor category or title. Defaults to "Unknown LCAT".
 
     Returns:
-        int: The employee ID (primary key).
+        int: The primary key EmployeeID for the existing or newly created employee.
+              Returns None if contractor_name is empty.
     """
-        
     contractor_name = contractor_name.strip()
     if not contractor_name:
         return None
@@ -41,83 +45,82 @@ def get_or_create_employee(conn, contractor_name, vendor=None, laborcategory=Non
     laborcategory = laborcategory or "Unknown LCAT"
     uniquekey = generate_employee_key(contractor_name, vendor)
 
-    # Look up by unique hash
+    # Look for existing employee
     emp = conn.execute(
-        select(employees).where(employees.c.uniquekey == uniquekey)
+        select(employees.c.EmployeeID)
+        .where(func.lower(employees.c.UniqueKey) == uniquekey.lower())
     ).mappings().fetchone()
 
     if emp:
-        employeeid = emp["employeeid"]
+        return emp["EmployeeID"]  # Use existing EmployeeID
 
-        # Backfill if needed
-        if not emp["vendorname"] or emp["vendorname"].strip().lower() == "unknown vendor":
-            conn.execute(
-                employees.update()
-                .where(employees.c.employeeid == employeeid)
-                .values(vendorname=vendor)
-            )
-        if not emp["laborcategory"] or emp["laborcategory"].strip().lower() == "unknown lcat":
-            conn.execute(
-                employees.update()
-                .where(employees.c.employeeid == employeeid)
-                .values(laborcategory=laborcategory)
-            )
+    # Insert only if not found
+    result = conn.execute(
+        insert(employees).values(
+            Name=contractor_name,
+            VendorName=vendor,
+            LaborCategory=laborcategory,
+            UniqueKey=uniquekey
+        ).returning(employees.c.EmployeeID)
+    )
+    employeeid = result.scalar_one()
 
-    else:
-        # Insert new employee
-        result = conn.execute(
-            insert(employees).values(
-                name=contractor_name,
-                vendorname=vendor,
-                laborcategory=laborcategory,
-                uniquekey=uniquekey
-            ).returning(employees.c.employeeid)
-        )
-        employeeid = result.scalar_one()
-
-        # Generate and assign public ID
-        publicid = generate_public_id(contractor_name, employeeid)
-        conn.execute(
-            employees.update()
-            .where(employees.c.employeeid == employeeid)
-            .values(publicid=publicid)
-        )
+    # Generate public ID
+    publicid = generate_public_id(contractor_name, employeeid)
+    conn.execute(
+        employees.update()
+        .where(employees.c.EmployeeID == employeeid)
+        .values(PublicID=publicid)
+    )
 
     return employeeid
 
 
 def get_or_create_workstream(conn, workstream_name):
     """
-    Retrieves an existing workstream by name (case-insensitive),
-    or inserts it if not found. Normalizes name formatting.
+    Retrieves an existing workstream from the Workstreams table or inserts a new one if not found.
+
+    - Performs a case-insensitive search for the given workstream name.
+    - Normalizes the name (trims whitespace, collapses spaces, and title-cases).
+    - If an existing workstream with the same normalized name is found, 
+      its WorkstreamID is returned.
+    - If not found, a new workstream record is inserted and its WorkstreamID returned.
+    - Prevents duplicate workstream creation due to inconsistent casing or spacing.
 
     Args:
-        conn (Connection): SQLAlchemy database connection.
-        workstream_name (str): Name of the workstream.
+        conn (Connection): Active SQLAlchemy database connection.
+        workstream_name (str): Name of the workstream (required).
 
     Returns:
-        int: The workstream ID.
+        int: The primary key WorkstreamID for the existing or newly created workstream.
+             Returns None if workstream_name is empty.
     """
-        
+    
     workstream_name = workstream_name.strip()
     if not workstream_name:
         return None
 
     normalized_name = normalize_text(workstream_name)
 
+    # Check if workstream already exists (case-insensitive)
     ws = conn.execute(
-        select(workstreams.c.workstreamid).where(
-            func.lower(workstreams.c.name) == normalized_name.lower()
+        select(workstreams.c.WorkstreamID).where(
+            func.lower(workstreams.c.Name) == func.lower(normalized_name)
         )
     ).scalar_one_or_none()
 
     if ws is not None:
-        return ws
+        return ws  # ✅ Existing workstream found
 
+    # Insert new workstream
     result = conn.execute(
-        insert(workstreams).values(name=normalized_name).returning(workstreams.c.workstreamid)
+        insert(workstreams).values(
+            Name=normalized_name
+        ).returning(workstreams.c.WorkstreamID)
     )
+
     return result.scalar_one()
+
 
 
 

@@ -15,7 +15,7 @@ def test_get_metadata_returns_metadata():
 def test_get_table_known():
     table = db.get_table("employees")
     assert table is not None
-    assert "employeeid" in table.c
+    assert "EmployeeID" in table.c
 
 def test_get_table_unknown_raises():
     with pytest.raises(KeyError):

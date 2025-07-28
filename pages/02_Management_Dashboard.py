@@ -1,20 +1,13 @@
 # Import necessary libraries
 import streamlit as st  # For creating the interactive web app
-from sqlalchemy import create_engine, text  # For database connection and raw SQL execution
+from sqlalchemy import text  # For database connection and raw SQL execution
 import pandas as pd  # For working with tabular data
 import plotly.express as px  # For creating visualizations
 import re  # For text cleaning using regular expressions
 
 # Import shared modules
-from utils.db import engine, employees, weekly_reports, hourstracking, accomplishments
+from utils.db import get_engine
 from utils.queries import weekly_reports_with_employees
-from utils.helpers import (
-    get_most_recent_monday,
-    get_or_create_employee,
-    get_or_create_workstream,
-    clean_dataframe_dates_hours,
-    normalize_text
-)
 
 
 ############################
@@ -44,7 +37,7 @@ st.caption("Visualize and filter team effort across vendors, divisions, and cont
 ############################
 @st.cache_data(ttl=600)
 def load_weekly_data():
-    with engine.connect() as conn:
+    with get_engine().connect() as conn:
         result = conn.execute(text(weekly_reports_with_employees))
         df = pd.DataFrame(result.fetchall(), columns=result.keys())
 
