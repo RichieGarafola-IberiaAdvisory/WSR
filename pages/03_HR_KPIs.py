@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, MetaData, Table, select, join  # For datab
 import pandas as pd  # For working with tabular data
 import plotly.express as px  # For generating interactive charts
 
-from utils.db import engine, employees, weekly_reports, load_tables
+from utils.db import engine, employees, weekly_reports
 from utils.helpers import normalize_text
 
 ############################
@@ -15,9 +15,6 @@ st.set_page_config(
      page_title="HR Dashboard", 
      # wide layout for more screen space
      layout="wide")
-
-# Load global tables
-load_tables()
 
 #######################
 # --- Logo Display ---
@@ -101,7 +98,8 @@ unplanned_pct = (unplanned_hours / total_hours * 100) if total_hours > 0 else 0
 
 # Define expected contractors manually or from config
 expected_contractors = {
-    "Smith, John", "Doe, Jane"
+    "Wild, Adam", "MacDonald, Alex", "Siddiqui, Ali", "Ma, Annie", "Jones, Ben", "Veit, Beverly", "Verrochi, Brian", "Doherty, Bryn", "Breslin, Casey", "Filer, Chaunoi", "Suriya, David", "Bruzdzinski, Don", "Mehm, Erica", "Fawale, Faith", "Chowdhury, Fazle", "Leitzinger, Jack", "Clack, Jaden", "Freire, Jared", "Clack, Jessie", "Holland, Joe", "Johnson, Jordan", "Good, Kevin", "Blyden, Latisha", "Sabhelhaus, Max", "McKillop, Meghan", "Swinson, Michael", "Hussain, Naveed", "Hart, Peter", "Garafola, Richie", "Thompson, Rob", "Waguespack, Ryan", "Schulze, Terri", "Schafer, Todd", "Javed, Usman", "Corkery, Bill", "Corkery, William", "Derrick, Zachary", "O'Brien, Talia", "Berrio, Yenis"
+
 }
 
 active_contractors = set(df["Contractor (Last Name, First Name)"].dropna().apply(normalize_text).unique())

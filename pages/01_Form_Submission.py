@@ -4,10 +4,10 @@
 import streamlit as st  # Used to build the interactive web app
 import pandas as pd  # Used for working with tabular data
 from sqlalchemy import create_engine, MetaData, Table, select, insert, func  # For database operations
-from datetime import date, timedelta  # For working with dates
+from datetime import date, datetime, timedelta  # For working with dates
 
 # Import shared modules
-from utils.db import engine, employees, weekly_reports, hourstracking, accomplishments, load_tables
+from utils.db import engine, employees, weekly_reports, hourstracking, accomplishments
 from utils.helpers import (
     get_most_recent_monday,
     get_or_create_employee,
@@ -15,7 +15,6 @@ from utils.helpers import (
     clean_dataframe_dates_hours,
     normalize_text
 )
-
 
 ####################
 # --- Page Setup ---
@@ -30,8 +29,6 @@ st.set_page_config(
 # Display logo at top of app (ensure image path points to valid directory)
 st.image("images/Iberia-Advisory.png", width=250)
 
-# Load global tables
-load_tables()
 ####################################
 # --- Page Title and Description ---
 ####################################
@@ -164,10 +161,10 @@ if st.button("📤 Submit Weekly Reports"):
                             govttaname=normalize_text(row.get("govttaname", "")),
                             
                             
-                            # Audit fields
-                            created_at=datetime.utcnow(),
-                            entered_by=st.session_state.get("username", "anonymous"),  # or a fallback string
-                            source_file="manual_form_submission"
+#                             # Audit fields
+#                             created_at=datetime.utcnow(),
+#                             entered_by=st.session_state.get("username", "anonymous"),  # or a fallback string
+#                             source_file="manual_form_submission"
                         )
                     )
 
@@ -181,10 +178,10 @@ if st.button("📤 Submit Weekly Reports"):
                                 hoursworked=row["hoursworked"],
                                 levelofeffort=row["effortpercentage"],
                                 
-                                # Audit fields
-                                created_at=datetime.utcnow(),
-                                entered_by=st.session_state.get("username", "anonymous"),
-                                source_file="manual_form_submission"
+#                                 # Audit fields
+#                                 created_at=datetime.utcnow(),
+#                                 entered_by=st.session_state.get("username", "anonymous"),
+#                                 source_file="manual_form_submission"
                             ))
 
             st.success("✅ Weekly Reports submitted successfully!")
@@ -257,9 +254,9 @@ if st.button("Submit Accomplishments"):
                                 description=text,
                                 
                                 
-                                # Audit fields
-                                created_at=datetime.utcnow(),
-                                entered_by=st.session_state.get("username", "anonymous")
+                                # # Audit fields
+                                # created_at=datetime.utcnow(),
+                                # entered_by=st.session_state.get("username", "anonymous")
                             ))
 
             st.success("✅ Accomplishments submitted successfully!")

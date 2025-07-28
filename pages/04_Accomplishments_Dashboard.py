@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 from sqlalchemy import select, join
 
-from utils.db import engine, employees, accomplishments, workstreams, load_tables
+from utils.db import engine, employees, accomplishments, workstreams
 from utils.helpers import normalize_text
 
 # ----------------------------
@@ -12,9 +12,6 @@ from utils.helpers import normalize_text
 st.set_page_config("Accomplishments Dashboard", layout="wide")
 st.title("Accomplishments Dashboard")
 st.caption("Explore weekly accomplishments across teams and workstreams.")
-
-# Load global tables
-load_tables()
 
 # ----------------------------
 # Load Data (w/ Join)
