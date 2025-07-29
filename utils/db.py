@@ -82,8 +82,14 @@ def load_tables():
     """Lazy-load global table references."""
     global employees, workstreams, weekly_reports, accomplishments, hourstracking
     
-    employees = employees or get_table("Employees")
-    workstreams = workstreams or get_table("Workstreams")
-    weekly_reports = weekly_reports or get_table("WeeklyReports")
-    accomplishments = accomplishments or get_table("Accomplishments")
-    hourstracking = hourstracking or get_table("HoursTracking")
+if employees is None:
+    employees = get_table("Employees")
+if workstreams is None:
+    workstreams = get_table("Workstreams")
+if weekly_reports is None:
+    weekly_reports = get_table("WeeklyReports")
+if accomplishments is None:
+    accomplishments = get_table("Accomplishments")
+if hourstracking is None:
+    hourstracking = get_table("HoursTracking")
+
