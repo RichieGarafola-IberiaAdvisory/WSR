@@ -1,49 +1,48 @@
-# This module provides a shared SQLAlchemy engine and lazy-loaded table references.
-# Every page can simply:
-# from utils.db import engine, employees, workstreams, weekly_reports, accomplishments, hours tracking
-# Avoids repeating schema reflection and config.
-
 import os
 from sqlalchemy import create_engine, MetaData
 from dotenv import load_dotenv
 
+# Safe import for Streamlit
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
+
 # Load variables from .env
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Use Streamlit secrets if available, otherwise fallback to .env
+DATABASE_URL = None
+if STREAMLIT_AVAILABLE and "DATABASE_URL" in st.secrets:
+    DATABASE_URL = st.secrets["DATABASE_URL"]
+else:
+    DATABASE_URL = os.getenv("DATABASE_URL")
+
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL not set in .env file.")
-    
-    
-##########################
-# PostGreSQL local option
-##########################
-# # Create engine and reflect schema metadata
-# engine = create_engine(DATABASE_URL, echo=False)
-# metadata = MetaData()
-# metadata.reflect(bind=engine)
+    raise RuntimeError("DATABASE_URL not set in environment variables or Streamlit secrets.")
 
-
-# Globals for lazy init
+# Internal module-level cache
 _engine = None
 _metadata = None
 _tables = {}
 
+# Global table references (lazy-loaded after calling load_tables)
+employees = None
+workstreams = None
+weekly_reports = None
+accomplishments = None
+hourstracking = None
+
 def get_engine():
-    """Return a cached SQLAlchemy engine."""
     global _engine
     if _engine is None:
-        _engine = create_engine(
-            DATABASE_URL,
-            echo=False,
-            fast_executemany=True,
-            pool_pre_ping=True
-        )
+        if not DATABASE_URL:
+            raise RuntimeError("DATABASE_URL not set. Cannot create engine.")
+        _engine = create_engine(DATABASE_URL, echo=False)
     return _engine
 
-
 def get_metadata():
-    """Reflect and cache database metadata."""
     global _metadata
     if _metadata is None:
         _metadata = MetaData()
@@ -51,34 +50,18 @@ def get_metadata():
     return _metadata
 
 def get_table(name):
-    """Return a reflected table by name, cached for reuse."""
     meta = get_metadata()
-    name = name.lower()  # normalize
-    for table_name, table_obj in meta.tables.items():
-        if table_name.lower() == name:
-            return table_obj
-    raise KeyError(f"Table '{name}' not found in database.")
+    if name not in meta.tables:
+        raise KeyError(f"Table '{name}' not found in database.")
+    if name not in _tables:
+        _tables[name] = meta.tables[name]
+    return _tables[name]
 
-
-# -----------------------------
-# Lazy table references
-# -----------------------------
-# These will only query metadata on first access
-metadata = get_metadata()
-
-employees = get_table("Employees")
-workstreams = get_table("Workstreams")
-weekly_reports = get_table("WeeklyReports")
-accomplishments = get_table("Accomplishments")
-hourstracking = get_table("HoursTracking")
-
-
-def db_healthcheck():
-    """Simple connectivity check."""
-    try:
-        with get_engine().connect() as conn:
-            conn.execute("SELECT 1")
-        return True
-    except Exception as e:
-        print("Database health check failed:", e)
-        return False
+def load_tables():
+    """Call this after environment is confirmed set to initialize global table variables."""
+    global employees, workstreams, weekly_reports, accomplishments, hourstracking
+    employees = get_table("employees")
+    workstreams = get_table("workstreams")
+    weekly_reports = get_table("weeklyreports")
+    accomplishments = get_table("accomplishments")
+    hourstracking = get_table("hourstracking")
