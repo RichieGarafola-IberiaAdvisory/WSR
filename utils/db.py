@@ -2,11 +2,25 @@ import os
 from sqlalchemy import create_engine, MetaData
 from dotenv import load_dotenv
 
+# Safe import for Streamlit
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
+
 # Load variables from .env
 load_dotenv()
 
-# Load DATABASE_URL but don't raise an error yet
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Use Streamlit secrets if available, otherwise fallback to .env
+DATABASE_URL = None
+if STREAMLIT_AVAILABLE and "DATABASE_URL" in st.secrets:
+    DATABASE_URL = st.secrets["DATABASE_URL"]
+else:
+    DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL not set in environment variables or Streamlit secrets.")
 
 # Internal module-level cache
 _engine = None
