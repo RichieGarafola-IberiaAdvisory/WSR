@@ -7,6 +7,7 @@ python-dotenv>=1.0
 # Database drivers
 pymssql>=2.3.0        # For MS SQL / Azure SQL
 psycopg2-binary>=2.9  # For PostgreSQL (if needed)
+pyodbc>=5.1.0
 
 # Visualization
 plotly>=5.20
