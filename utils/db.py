@@ -17,17 +17,13 @@ hourstracking = None
 
 
 def get_engine():
-    """Create and cache SQLAlchemy engine for MS SQL Server."""
+    """Create and cache SQLAlchemy engine for Azure SQL."""
     global _engine
     if _engine is None:
-        connection_string = st.secrets.get("DATABASE_URL") or os.getenv("DATABASE_URL")
-        if not connection_string:
-            raise RuntimeError("DATABASE_URL is not set in Streamlit secrets or environment variables")
-        
+        connection_string = st.secrets["DATABASE_URL"]
         params = urllib.parse.quote_plus(connection_string)
         _engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
     return _engine
-
 
 def get_metadata():
     """Reflect and cache database metadata."""
@@ -37,14 +33,14 @@ def get_metadata():
         _metadata.reflect(
             bind=get_engine(),
             schema="dbo",
-            only=["Employees", "Workstreams", "WeeklyReports", "Accomplishments", "HoursTracking"]
+            only=[
+                "Employees",
+                "Workstreams",
+                "WeeklyReports",
+                "Accomplishments",
+                "HoursTracking"
+            ]
         )
-        
-        # Debugging output
-        tables_found = list(_metadata.tables.keys())
-        print("🔎 Tables found in metadata:", tables_found)
-        st.sidebar.write("🔎 Tables found:", tables_found)
-
     return _metadata
 
 def get_table(name):
