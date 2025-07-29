@@ -1,14 +1,10 @@
-# pages/01_Form_Submission.py
+import streamlit as st
+import pandas as pd
+from sqlalchemy import insert
+from datetime import datetime
 
-# Import required libraries
-import streamlit as st  # Used to build the interactive web app
-import pandas as pd  # Used for working with tabular data
-from sqlalchemy import insert  # For database operations
-from datetime import datetime  # For working with dates
-
-# Import shared modules
-from utils.db import get_engine, employees, weekly_reports, hourstracking, accomplishments
-
+# Import only functions
+from utils.db import get_engine, load_tables
 from utils.helpers import (
     get_most_recent_monday,
     get_or_create_employee,
@@ -17,31 +13,27 @@ from utils.helpers import (
     normalize_text
 )
 
-####################
-# --- Page Setup ---
-####################
-# Configure the layout of the Streamlit page
-st.set_page_config(
-    # browser tab title
-    page_title="Weekly Form Submission", 
-    # wide layout for more screen space
-    layout="wide")
-
-# Display logo at top of app (ensure image path points to valid directory)
+# ----------------------------
+# Page Setup
+# ----------------------------
+st.set_page_config(page_title="Weekly Form Submission", layout="wide")
 st.image("images/Iberia-Advisory.png", width=250)
-
-####################################
-# --- Page Title and Description ---
-####################################
-# Display the main title and a short description below it
 st.title("Weekly Form Submission Portal")
 st.caption("Log your team's contributions and accomplishments for the week.")
 
-#########################
-# --- Column Mapping Dictionaries ---
-#########################
-# These dictionaries map human-readable column names (used in the app) to the actual column names in the database
+# ----------------------------
+# Lazy-load tables
+# ----------------------------
+load_tables()
+from utils import db
+employees = db.employees
+weekly_reports = db.weekly_reports
+hourstracking = db.hourstracking
+accomplishments = db.accomplishments
 
+# ----------------------------
+# Column Maps
+# ----------------------------
 weekly_report_col_map = {
     "Reporting Week (MM/DD/YYYY)": "weekstartdate",
     "Vendor Name": "vendorname",
@@ -70,16 +62,13 @@ accomplishments_col_map = {
     "Accomplishment 5": "accomplishment_5"
 }
 
-# Create lists of the columns to show in each table editor
 weekly_columns = list(weekly_report_col_map.keys())
 accom_columns = list(accomplishments_col_map.keys())
-
-# Get most recent Monday for pre-populating the form
 most_recent_monday = get_most_recent_monday()
 
-################################
-# --- Weekly Reports Section ---
-################################
+# ----------------------------
+# Weekly Reports Section
+# ----------------------------
 st.markdown("## Weekly Reports")
 with st.expander("Instructions", expanded=False):
     st.markdown("""
@@ -87,12 +76,11 @@ with st.expander("Instructions", expanded=False):
     - Enter actual hours worked (up to 40).
     - Leave blank rows empty — they'll be ignored.
     """)
-# Create a default empty DataFrame for the user to fill
+
 weekly_default = pd.DataFrame([{col: "" for col in weekly_columns}])
 weekly_default.at[0, "Reporting Week (MM/DD/YYYY)"] = most_recent_monday
 weekly_default.at[0, "If Completed (YYYY-MM-DD)"] = pd.NaT
 
-# Display an editable table (like an excel spreadsheet)
 weekly_df = st.data_editor(
     weekly_default,
     column_config={
@@ -104,26 +92,22 @@ weekly_df = st.data_editor(
     num_rows="dynamic"
 )
 
-
-######################################
-# --- Submit Weekly Reports Button ---
-######################################
-
-if st.button("📤 Submit Weekly Reports"):
+if st.button("Submit Weekly Reports"):
     cleaned_df = weekly_df.dropna(how="all")
     if cleaned_df.empty:
         st.warning("Please fill at least one row before submitting.")
     else:
         try:
             cleaned_df = cleaned_df.rename(columns=weekly_report_col_map)
-            cleaned_df = clean_dataframe_dates_hours(
-                cleaned_df,
-                date_cols=["weekstartdate", "datecompleted"],
-                numeric_cols=["hoursworked"]
-            )
+            cleaned_df = clean_dataframe_dates_hours(cleaned_df, 
+                                                     date_cols=["weekstartdate", "datecompleted"],
+                                                     numeric_cols=["hoursworked"])
             cleaned_df["effortpercentage"] = (cleaned_df["hoursworked"] / 40) * 100
 
             with get_engine().begin() as conn:
+                weekly_data = []
+                hours_data = []
+
                 for _, row in cleaned_df.iterrows():
                     contractor = normalize_text(row.get("contractorname", ""))
                     if not contractor:
@@ -136,48 +120,46 @@ if st.button("📤 Submit Weekly Reports"):
                         laborcategory=normalize_text(row.get("laborcategory", ""))
                     )
 
-                    conn.execute(
-                        insert(weekly_reports).values(
-                            EmployeeID=employee_id,
-                            WeekStartDate=row["weekstartdate"],
-                            DivisionCommand=normalize_text(row.get("divisioncommand", "")),
-                            WorkProductTitle=normalize_text(row.get("workproducttitle", "")),
-                            ContributionDescription=normalize_text(row.get("contributiondescription", "")),
-                            Status=normalize_text(row.get("status", "")),
-                            PlannedOrUnplanned=row.get("plannedorunplanned", "").strip().lower(),
-                            DateCompleted=row["datecompleted"],
-                            DistinctNFR=normalize_text(row.get("distinctnfr", "")),
-                            DistinctCAP=normalize_text(row.get("distinctcap", "")),
-                            EffortPercentage=row["effortpercentage"],
-                            ContractorName=contractor,
-                            GovtTAName=normalize_text(row.get("govttaname", "")),
-                        )
-                    )
+                    weekly_data.append({
+                        "EmployeeID": employee_id,
+                        "WeekStartDate": row["weekstartdate"],
+                        "DivisionCommand": normalize_text(row.get("divisioncommand", "")),
+                        "WorkProductTitle": normalize_text(row.get("workproducttitle", "")),
+                        "ContributionDescription": normalize_text(row.get("contributiondescription", "")),
+                        "Status": normalize_text(row.get("status", "")),
+                        "PlannedOrUnplanned": row.get("plannedorunplanned", "").strip().lower(),
+                        "DateCompleted": row["datecompleted"],
+                        "DistinctNFR": normalize_text(row.get("distinctnfr", "")),
+                        "DistinctCAP": normalize_text(row.get("distinctcap", "")),
+                        "EffortPercentage": row["effortpercentage"],
+                        "ContractorName": contractor,
+                        "GovtTAName": normalize_text(row.get("govttaname", "")),
+                    })
 
                     if row["hoursworked"] > 0:
-                        conn.execute(
-                            insert(hourstracking).values(
-                                EmployeeID=employee_id,
-                                WorkstreamID=None,
-                                ReportingWeek=row["weekstartdate"],
-                                HoursWorked=row["hoursworked"],
-                                LevelOfEffort=row["effortpercentage"],
-                            )
-                        )
+                        hours_data.append({
+                            "EmployeeID": employee_id,
+                            "WorkstreamID": None,
+                            "ReportingWeek": row["weekstartdate"],
+                            "HoursWorked": row["hoursworked"],
+                            "LevelOfEffort": row["effortpercentage"],
+                        })
 
+                if weekly_data:
+                    conn.execute(insert(weekly_reports), weekly_data)
+                if hours_data:
+                    conn.execute(insert(hourstracking), hours_data)
 
-            st.success("✅ Weekly Reports submitted successfully!")
+            st.success("Weekly Reports submitted successfully!")
             with st.expander("View Submitted Data"):
                 st.dataframe(cleaned_df)
 
         except Exception as e:
-            st.error(f"❌ Error inserting weekly reports: {e}")
+            st.error(f"Error inserting weekly reports: {e}")
 
-
-
-##################################
-# --- Accomplishments Section ---
-##################################
+# ----------------------------
+# Accomplishments Section
+# ----------------------------
 st.markdown("---")
 st.markdown("## Weekly Accomplishments")
 with st.expander("Instructions", expanded=False):
@@ -187,11 +169,9 @@ with st.expander("Instructions", expanded=False):
     - Leave unused fields blank.
     """)
 
-# Create a default blank row for accomplishments entry
 accom_default = pd.DataFrame([{col: "" for col in accom_columns}])
 accom_default.at[0, "Reporting Week (MM/DD/YYYY)"] = most_recent_monday
 
-# Display editable table for accomplishments
 accom_df = st.data_editor(
     accom_default,
     column_config={
@@ -202,9 +182,6 @@ accom_df = st.data_editor(
     num_rows="dynamic"
 )
 
-#######################################
-# --- Submit Accomplishments Button ---
-#######################################
 if st.button("Submit Accomplishments"):
     cleaned_accom_df = accom_df.dropna(how="all")
     if cleaned_accom_df.empty:
@@ -212,9 +189,9 @@ if st.button("Submit Accomplishments"):
     else:
         try:
             df = cleaned_accom_df.rename(columns=accomplishments_col_map)
-
-            # Start DB transaction
             with get_engine().begin() as conn:
+                accomplishment_data = []
+
                 for _, row in df.iterrows():
                     contractor = normalize_text(row.get("name", ""))
                     if not contractor:
@@ -224,29 +201,32 @@ if st.button("Submit Accomplishments"):
                     workstream_id = get_or_create_workstream(conn, normalize_text(row.get("workstream_name", "")))
 
                     reporting_week = row.get("reporting_week")
-                    week_str = reporting_week.strftime("%m/%d/%Y") if pd.notnull(reporting_week) else ""
+                    week_date = (
+                        pd.to_datetime(reporting_week, errors="coerce").date()
+                        if pd.notnull(reporting_week)
+                        else None
+                    )
 
-                    # Insert each accomplishment (up to 5 per row)
                     for i in range(1, 6):
                         text = normalize_text(row.get(f"accomplishment_{i}", ""))
                         if text:
-                            conn.execute(insert(accomplishments).values(
-                                EmployeeID=employee_id,
-                                WorkstreamID=workstream_id,
-                                DateRange=week_str,
-                                Description=text,
-                                
-                                # # Audit fields
-                                # created_at=datetime.utcnow(),
-                                # entered_by=st.session_state.get("username", "anonymous")
-                            ))
+                            accomplishment_data.append({
+                                "EmployeeID": employee_id,
+                                "WorkstreamID": workstream_id,
+                                "DateRange": week_date,
+                                "Description": text,
+                            })
 
-            st.success("✅ Accomplishments submitted successfully!")
+                if accomplishment_data:
+                    conn.execute(insert(accomplishments), accomplishment_data)
+
+            st.success("Accomplishments submitted successfully!")
             with st.expander("View Submitted Data"):
                 st.dataframe(df)
 
         except Exception as e:
-            st.error(f"❌ Error inserting accomplishments: {e}")
+            st.error(f"Error inserting accomplishments: {e}")
+
 
             
 #######################        
