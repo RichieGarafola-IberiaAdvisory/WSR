@@ -19,6 +19,29 @@ st.set_page_config(
     # wide layout for more screen space
     layout="wide")
 
+st.markdown("""
+    <style>
+        /* Blue Header for titles */
+        h1, h2, h3, h4 {
+            color: #004080 !important; /* Navy Blue */
+        }
+        
+        /* KPI metric cards */
+        div[data-testid="stMetricValue"] {
+            color: #004080;
+            font-weight: bold;
+        }
+        div[data-testid="stMetricLabel"] {
+            color: #1E90FF;
+        }
+
+        /* Horizontal rule */
+        hr {
+            border-top: 2px solid #1E90FF;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 #######################
 # --- Logo Display ---
 #######################
@@ -45,6 +68,11 @@ def load_weekly_data():
     return df
 
 df = load_weekly_data()
+
+# Incase there is a missing dataset, provide a warning
+if df.empty:
+    st.warning("No weekly report data available.")
+    st.stop()
 
 #########################
 # --- Data Preparation ---
@@ -82,21 +110,40 @@ st.sidebar.header("Filter Data")
 
 # Create dropdowns/multiselects based on available data
 week_options = df["Reporting Week"].dropna().dt.strftime("%Y-%m-%d").sort_values().unique()
-selected_weeks = st.sidebar.multiselect("Reporting Week", week_options)
-
 vendors = df["Vendor Name"].dropna().sort_values().unique()
-selected_vendors = st.sidebar.multiselect("Vendor", vendors)
-
 contractors = df["Contractor (Last Name, First Name)"].dropna().sort_values().unique()
-selected_contractors = st.sidebar.multiselect("Contractor", contractors)
+
+# Initialize session state for filters
+if "selected_weeks" not in st.session_state:
+    st.session_state.selected_weeks = []
+if "selected_vendors" not in st.session_state:
+    st.session_state.selected_vendors = []
+if "selected_contractors" not in st.session_state:
+    st.session_state.selected_contractors = []
+
+# Sidebar multiselect widgets
+selected_weeks = st.sidebar.multiselect("Reporting Week", week_options, default=st.session_state.selected_weeks)
+selected_vendors = st.sidebar.multiselect("Vendor", vendors, default=st.session_state.selected_vendors)
+selected_contractors = st.sidebar.multiselect("Contractor", contractors, default=st.session_state.selected_contractors)
+
+# Reset button
+if st.sidebar.button("Reset Filters"):
+    st.session_state.selected_weeks = []
+    st.session_state.selected_vendors = []
+    st.session_state.selected_contractors = []
+    st.experimental_rerun()
 
 # Apply filters
+filters = pd.Series(True, index=df.index)
+
 if selected_weeks:
-    df = df[df["Reporting Week"].dt.strftime("%Y-%m-%d").isin(selected_weeks)]
+    filters &= df["Reporting Week"].dt.strftime("%Y-%m-%d").isin(selected_weeks)
 if selected_vendors:
-    df = df[df["Vendor Name"].isin(selected_vendors)]
+    filters &= df["Vendor Name"].isin(selected_vendors)
 if selected_contractors:
-    df = df[df["Contractor (Last Name, First Name)"].isin(selected_contractors)]
+    filters &= df["Contractor (Last Name, First Name)"].isin(selected_contractors)
+
+df = df[filters]
 
 ####################
 # --- Export CSV ---
@@ -138,8 +185,11 @@ try:
             "Work Product Status",
             "Planned or Unplanned",
             "Govt TA (Last Name, First Name)"
-        ]
+        ],
+        # color="Level of Effort (%)",  # Color intensity based on effort
+        # color_continuous_scale="Blues"  # Apply blue color scheme
     )
+    # fig.update_traces(root_color="lightblue")  # Optional: root background
     st.plotly_chart(fig, use_container_width=True)
 except ValueError as ve:
     st.error(f"Treemap failed to render: {ve}")

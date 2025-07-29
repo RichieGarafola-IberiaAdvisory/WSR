@@ -1,12 +1,15 @@
 # Import required libraries
 import streamlit as st  # Used for building the web app
-from sqlalchemy import select, join  # For database connections
+from sqlalchemy import select, join, func, text  # For database connections
 import pandas as pd  # For working with tabular data
 import plotly.express as px  # For generating interactive charts
 
 
 from utils.db import get_engine, employees, weekly_reports
 from utils.helpers import normalize_text
+
+
+
 
 ############################
 # --- Page Configuration ---
@@ -16,6 +19,32 @@ st.set_page_config(
      page_title="HR Dashboard", 
      # wide layout for more screen space
      layout="wide")
+
+
+
+st.markdown("""
+    <style>
+        /* Blue Header for titles */
+        h1, h2, h3, h4 {
+            color: #004080 !important; /* Navy Blue */
+        }
+        
+        /* KPI metric cards */
+        div[data-testid="stMetricValue"] {
+            color: #004080;
+            font-weight: bold;
+        }
+        div[data-testid="stMetricLabel"] {
+            color: #1E90FF;
+        }
+
+        /* Horizontal rule */
+        hr {
+            border-top: 2px solid #1E90FF;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 
 #######################
 # --- Logo Display ---
@@ -85,6 +114,49 @@ df["Level of Effort (%)"] = pd.to_numeric(df["Level of Effort (%)"], errors='coe
 # Calculate total hours assuming 40 hours is 100% effort
 df["Hours"] = (df["Level of Effort (%)"] / 100 * 40).round(2)
 
+#########################
+# --- Sidebar Filters ---
+#########################
+st.sidebar.header("Filter HR Data")
+
+# Date range filter
+min_date = df["Reporting Week"].min()
+max_date = df["Reporting Week"].max()
+start_date, end_date = st.sidebar.date_input(
+    "Select Date Range",
+    [min_date, max_date],
+    min_value=min_date,
+    max_value=max_date
+)
+
+# Division filter
+divisions = sorted(df["Division/Command"].dropna().unique())
+selected_divisions = st.sidebar.multiselect("Select Divisions", divisions)
+
+# Contractor filter
+contractors = sorted(df["Contractor (Last Name, First Name)"].dropna().unique())
+selected_contractors = st.sidebar.multiselect("Select Contractors", contractors)
+
+# Labor Category filter
+labor_cats = sorted(df["Labor Category"].dropna().unique())
+selected_labor_cats = st.sidebar.multiselect("Select Labor Categories", labor_cats)
+
+# Reset button
+if st.sidebar.button("🔄 Reset Filters"):
+    st.experimental_rerun()
+
+# Apply filters
+filters = df["Reporting Week"].between(pd.to_datetime(start_date), pd.to_datetime(end_date))
+if selected_divisions:
+    filters &= df["Division/Command"].isin(selected_divisions)
+if selected_contractors:
+    filters &= df["Contractor (Last Name, First Name)"].isin(selected_contractors)
+if selected_labor_cats:
+    filters &= df["Labor Category"].isin(selected_labor_cats)
+
+df = df[filters]
+
+
 ####################
 # --- Export CSV ---
 ####################
@@ -105,13 +177,34 @@ avg_hours_per_contractor = df.groupby("Contractor (Last Name, First Name)")["Hou
 unplanned_hours = df[df["Planned or Unplanned"] == "unplanned"]["Hours"].sum()
 unplanned_pct = (unplanned_hours / total_hours * 100) if total_hours > 0 else 0
 
-# Define expected contractors manually or from config
-expected_contractors = {
-    "Wild, Adam", "MacDonald, Alex", "Siddiqui, Ali", "Ma, Annie", "Jones, Ben", "Veit, Beverly", "Verrochi, Brian", "Doherty, Bryn", "Breslin, Casey", "Filer, Chaunoi", "Suriya, David", "Bruzdzinski, Don", "Mehm, Erica", "Fawale, Faith", "Chowdhury, Fazle", "Leitzinger, Jack", "Clack, Jaden", "Freire, Jared", "Clack, Jessie", "Holland, Joe", "Johnson, Jordan", "Good, Kevin", "Blyden, Latisha", "Sabhelhaus, Max", "McKillop, Meghan", "Swinson, Michael", "Hussain, Naveed", "Hart, Peter", "Garafola, Richie", "Thompson, Rob", "Waguespack, Ryan", "Schulze, Terri", "Schafer, Todd", "Javed, Usman", "Corkery, Bill", "Corkery, William", "Derrick, Zachary", "O'Brien, Talia", "Berrio, Yenis"
+# --- Fetch Expected Contractors Dynamically ---
+@st.cache_data(ttl=600)
+def get_expected_contractors():
+    with get_engine().connect() as conn:
+        stmt = select(employees.c.Name)
+        results = conn.execute(stmt).fetchall()
 
-}
+    # Create DataFrame with proper column name
+    contractor_names = pd.DataFrame(results, columns=["Name"])["Name"].tolist()
 
-active_contractors = set(df["Contractor (Last Name, First Name)"].dropna().apply(normalize_text).unique())
+    return {normalize_text(name) for name in contractor_names if name}
+
+
+expected_contractors = get_expected_contractors()
+
+# --- Empty Data Check ---
+if df.empty:
+    st.warning("No HR data available.")
+    st.stop()
+
+# --- Active Contractors ---
+active_contractors = set(
+    df["Contractor (Last Name, First Name)"].dropna()
+    .apply(normalize_text)
+    .unique()
+)
+
+# --- Missing Contractors ---
 missing_contractors = sorted(expected_contractors - active_contractors)
 
 # Display metrics in columns
@@ -134,7 +227,8 @@ with row1_col1:
     st.plotly_chart(px.pie(
         names=status_counts.index,
         values=status_counts.values,
-        title="Work Status Distribution"
+        title="Work Status Distribution",
+    color_discrete_sequence=px.colors.sequential.Blues
     ), use_container_width=True)
 
 with row1_col2:
@@ -161,7 +255,8 @@ with row2_col1:
         x="Level of Effort (%)",
         y="Division/Command",
         orientation="h",
-        title="Total Effort (%) per Division"
+        title="Total Effort (%) per Division",
+    color_discrete_sequence=px.colors.sequential.Blues
     ), use_container_width=True)
 
 with row2_col2:
@@ -178,7 +273,8 @@ with row2_col2:
         x="Hours",
         y="Division/Command",
         orientation="h",
-        title="Unplanned Hours per Division"
+        title="Unplanned Hours per Division",
+    color_discrete_sequence=px.colors.sequential.Blues
     ), use_container_width=True)
 
 # --- Row 3: Top Work Products + Labor Category Distribution ---
@@ -199,18 +295,38 @@ with row3_col2:
     st.plotly_chart(px.pie(
         names=labor_dist.index,
         values=labor_dist.values,
-        title="Labor Categories"
+        title="Labor Categories",
+    color_discrete_sequence=px.colors.sequential.Blues
     ), use_container_width=True)
 
 # --- Heatmap: Hours by Contractor and Month ---
 st.subheader("Monthly Hours Heatmap by Contractor")
+
+@st.cache_data(ttl=600)
+def load_heatmap_data():
+    query = text("""
+        SELECT 
+            e.Name AS Contractor,
+            DATEFROMPARTS(YEAR(wr.WeekStartDate), MONTH(wr.WeekStartDate), 1) AS Month,
+            SUM((wr.EffortPercentage / 100.0) * 40) AS Hours
+        FROM WeeklyReports wr
+        JOIN Employees e ON wr.EmployeeID = e.EmployeeID
+        GROUP BY 
+            e.Name,
+            DATEFROMPARTS(YEAR(wr.WeekStartDate), MONTH(wr.WeekStartDate), 1)
+        ORDER BY Month
+    """)
+    
+    with get_engine().connect() as conn:
+        df_heatmap = pd.DataFrame(conn.execute(query).fetchall(), columns=["Contractor", "Month", "Hours"])
+    
+    return df_heatmap
+
+# Fetch aggregated data and pivot for heatmap
+heatmap_data = load_heatmap_data()
 heatmap_df = (
-    df.dropna(subset=["Reporting Week"])
-    .assign(Month=df["Reporting Week"].dt.to_period("M").astype(str))
-    .groupby(["Contractor (Last Name, First Name)", "Month"])["Hours"]
-    .sum()
-    .reset_index()
-    .pivot(index="Contractor (Last Name, First Name)", columns="Month", values="Hours")
+    heatmap_data
+    .pivot(index="Contractor", columns="Month", values="Hours")
     .fillna(0)
 )
 
@@ -219,7 +335,7 @@ st.dataframe(
     use_container_width=True
 )
 
-# --- Contractor Coverage Check --
+# --- Contractor Coverage Check ---
 st.subheader("Contractors with Zero Submissions")
 if missing_contractors:
     st.warning(f"{len(missing_contractors)} contractors have no submissions.")
