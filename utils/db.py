@@ -20,9 +20,24 @@ def get_engine():
     """Create and cache SQLAlchemy engine for Azure SQL."""
     global _engine
     if _engine is None:
-        connection_string = st.secrets["DATABASE_URL"]
-        params = urllib.parse.quote_plus(connection_string)
-        _engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+        connection_string = st.secrets.get("DATABASE_URL") or os.getenv("DATABASE_URL")
+        if not connection_string:
+            raise RuntimeError("DATABASE_URL not found")
+
+        # Try Driver 18 first, fallback to 17
+        if "ODBC Driver 18" in connection_string:
+            try:
+                params = urllib.parse.quote_plus(connection_string)
+                _engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+            except Exception:
+                # Fallback to Driver 17
+                connection_string = connection_string.replace("ODBC Driver 18", "ODBC Driver 17")
+                params = urllib.parse.quote_plus(connection_string)
+                _engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+        else:
+            params = urllib.parse.quote_plus(connection_string)
+            _engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+
     return _engine
 
 def get_metadata():
