@@ -1,5 +1,9 @@
 # Import the Streamlit library, to build the interactive web apps
 import streamlit as st
+import os
+
+# Use polling instead of inotify for Streamlit Cloud to avoid watcher limits
+os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "poll"
 
 #############################
 # --- Page Configuration ---
