@@ -5,7 +5,7 @@ sqlalchemy>=2.0
 python-dotenv>=1.0
 
 # Database drivers
-pyodbc>=4.0.39   # For MS SQL / Azure SQL
+pymssql>=2.3.0        # For MS SQL / Azure SQL
 psycopg2-binary>=2.9  # For PostgreSQL (if needed)
 
 # Visualization
