@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from sqlalchemy import select, insert, func
 import hashlib
 
-from utils.db import employees, workstreams, hourstracking
+from utils.db import employees, workstreams
 
 def get_most_recent_monday():
     """
@@ -37,6 +37,8 @@ def get_or_create_employee(conn, contractor_name, vendor=None, laborcategory=Non
         int: The primary key EmployeeID for the existing or newly created employee.
               Returns None if contractor_name is empty.
     """
+    from utils.db import employees  # Local import to avoid NoneType errors in tests
+    
     contractor_name = contractor_name.strip()
     if not contractor_name:
         return None
@@ -48,7 +50,7 @@ def get_or_create_employee(conn, contractor_name, vendor=None, laborcategory=Non
     # Look for existing employee
     emp = conn.execute(
         select(employees.c.EmployeeID)
-        .where(func.lower(employees.c.UniqueKey) == uniquekey.lower())
+        .where(employees.c.UniqueKey == uniquekey)
     ).mappings().fetchone()
 
     if emp:
@@ -95,6 +97,7 @@ def get_or_create_workstream(conn, workstream_name):
         int: The primary key WorkstreamID for the existing or newly created workstream.
              Returns None if workstream_name is empty.
     """
+    from utils.db import workstreams  # Local import to avoid NoneType errors in tests
     
     workstream_name = workstream_name.strip()
     if not workstream_name:
@@ -110,7 +113,7 @@ def get_or_create_workstream(conn, workstream_name):
     ).scalar_one_or_none()
 
     if ws is not None:
-        return ws  # ✅ Existing workstream found
+        return ws  # Existing workstream found
 
     # Insert new workstream
     result = conn.execute(
@@ -197,4 +200,3 @@ def generate_public_id(name: str, numeric_id: int) -> str:
     else:
         base = parts[0]
     return f"{base.upper()}-{numeric_id:03d}"
-
