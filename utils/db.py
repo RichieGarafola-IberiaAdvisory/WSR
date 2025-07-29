@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 from sqlalchemy import create_engine, MetaData
 import urllib
 
@@ -19,7 +20,10 @@ def get_engine():
     """Create and cache SQLAlchemy engine for MS SQL Server."""
     global _engine
     if _engine is None:
-        connection_string = st.secrets["DATABASE_URL"]
+        connection_string = st.secrets.get("DATABASE_URL") or os.getenv("DATABASE_URL")
+        if not connection_string:
+            raise RuntimeError("DATABASE_URL is not set in Streamlit secrets or environment variables")
+        
         params = urllib.parse.quote_plus(connection_string)
         _engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
     return _engine
@@ -32,36 +36,43 @@ def get_metadata():
         _metadata = MetaData()
         _metadata.reflect(
             bind=get_engine(),
+            schema="dbo",
             only=["Employees", "Workstreams", "WeeklyReports", "Accomplishments", "HoursTracking"]
         )
-    return _metadata
+        
+        # Debugging output
+        tables_found = list(_metadata.tables.keys())
+        print("🔎 Tables found in metadata:", tables_found)
+        st.sidebar.write("🔎 Tables found:", tables_found)
 
+    return _metadata
 
 def get_table(name):
     """Retrieve a table object by name with caching."""
     meta = get_metadata()
     name_lower = name.lower()
+
+    # Cache Check
     if name_lower in _tables:
         return _tables[name_lower]
-    
+
+    # Match ignoring schema
     for table_name, table_obj in meta.tables.items():
-        if table_name.lower() == name_lower:
+        if table_name.split('.')[-1].lower() == name_lower:
             _tables[name_lower] = table_obj
             return table_obj
-    
-    raise KeyError(f"Table '{name}' not found in database.")
+            
+    # Debug output if table not found
+    all_tables = list(meta.tables.keys())
+    raise KeyError(f"❌ Table '{name}' not found. Found tables: {all_tables}")
 
 
 def load_tables():
     """Lazy-load global table references."""
     global employees, workstreams, weekly_reports, accomplishments, hourstracking
-    if employees is None:
-        employees = get_table("Employees")
-    if workstreams is None:
-        workstreams = get_table("Workstreams")
-    if weekly_reports is None:
-        weekly_reports = get_table("WeeklyReports")
-    if accomplishments is None:
-        accomplishments = get_table("Accomplishments")
-    if hourstracking is None:
-        hourstracking = get_table("HoursTracking")
+    
+    employees = employees or get_table("Employees")
+    workstreams = workstreams or get_table("Workstreams")
+    weekly_reports = weekly_reports or get_table("WeeklyReports")
+    accomplishments = accomplishments or get_table("Accomplishments")
+    hourstracking = hourstracking or get_table("HoursTracking")
