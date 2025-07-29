@@ -1,9 +1,12 @@
 # Import the Streamlit library, to build the interactive web apps
 import streamlit as st
 import os
+from utils import db
+db.load_tables()
 
 # Use polling instead of inotify for Streamlit Cloud to avoid watcher limits
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "poll"
+
 
 #############################
 # --- Page Configuration ---
@@ -23,8 +26,8 @@ st.set_page_config(
 # --- Logo Display ---
 #######################
 # Display logo at top of app (ensure image path points to valid directory)
-st.image("images/Iberia-Advisory.png", width=250)
-
+if os.path.exists("images/Iberia-Advisory.png"):
+    st.image("images/Iberia-Advisory.png", width=250)
 
 ####################################
 # --- Page Title and Description ---
