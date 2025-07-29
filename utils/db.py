@@ -22,6 +22,11 @@ else:
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL not set in environment variables or Streamlit secrets.")
 
+# Ensure we're using pymssql (avoids ODBC driver issues on Streamlit Cloud)
+if DATABASE_URL.startswith("mssql+pyodbc"):
+    # Convert to pymssql format automatically
+    DATABASE_URL = DATABASE_URL.replace("mssql+pyodbc", "mssql+pymssql")
+
 # Internal module-level cache
 _engine = None
 _metadata = None
@@ -35,14 +40,16 @@ accomplishments = None
 hourstracking = None
 
 def get_engine():
+    """Return a cached SQLAlchemy engine."""
     global _engine
     if _engine is None:
         if not DATABASE_URL:
             raise RuntimeError("DATABASE_URL not set. Cannot create engine.")
-        _engine = create_engine(DATABASE_URL, echo=False)
+        _engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
     return _engine
 
 def get_metadata():
+    """Reflect and cache database metadata"""
     global _metadata
     if _metadata is None:
         _metadata = MetaData()
@@ -50,6 +57,7 @@ def get_metadata():
     return _metadata
 
 def get_table(name):
+    """Return a reflected table by name, cashed for reuse."""
     meta = get_metadata()
     if name not in meta.tables:
         raise KeyError(f"Table '{name}' not found in database.")
@@ -65,3 +73,14 @@ def load_tables():
     weekly_reports = get_table("weeklyreports")
     accomplishments = get_table("accomplishments")
     hourstracking = get_table("hourstracking")
+
+def db_healthcheck():
+    """Simple connectivity check."""
+    try:
+        with get_engine().connect() as conn:
+            conn.execute("SELECT 1")
+        return True
+    except Exception as e:
+        print("Database health check failed:", e)
+        return False
+
