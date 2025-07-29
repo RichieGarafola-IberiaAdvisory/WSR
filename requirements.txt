@@ -1,9 +1,16 @@
+# Core packages
 streamlit>=1.30
 pandas>=2.0
 sqlalchemy>=2.0
-psycopg2-binary>=2.9
+python-dotenv>=1.0
+
+# Database drivers
+pyodbc>=4.0.39   # For MS SQL / Azure SQL
+psycopg2-binary>=2.9  # For PostgreSQL (if needed)
+
+# Visualization
 plotly>=5.20
 
-python-dotenv>=1.0
-flake8
-pytest
+# Development tools
+flake8>=7.0
+pytest>=8.0
