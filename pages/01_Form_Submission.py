@@ -225,6 +225,8 @@ accom_df = st.data_editor(
 #######################################
 # --- Submit Accomplishments Button ---
 #######################################
+from sqlalchemy import select
+
 if st.button("Submit Accomplishments"):
     cleaned_accom_df = accom_df.dropna(how="all")
     if cleaned_accom_df.empty:
@@ -232,8 +234,9 @@ if st.button("Submit Accomplishments"):
     else:
         try:
             df = cleaned_accom_df.rename(columns=accomplishments_col_map)
+            duplicates_found = []  # Store skipped duplicates
+            inserted_count = 0
 
-            # Start DB transaction
             with engine.begin() as conn:
                 for _, row in df.iterrows():
                     contractor = normalize_text(row.get("name", ""))
@@ -241,7 +244,10 @@ if st.button("Submit Accomplishments"):
                         continue
 
                     employee_id = get_or_create_employee(conn, contractor)
-                    workstream_id = get_or_create_workstream(conn, normalize_text(row.get("workstream_name", "")))
+                    workstream_id = get_or_create_workstream(
+                        conn,
+                        normalize_text(row.get("workstream_name", ""))
+                    )
 
                     reporting_week = row.get("reporting_week")
                     week_date = (
@@ -250,11 +256,10 @@ if st.button("Submit Accomplishments"):
                         else None
                     )
 
-                    # Insert each accomplishment (up to 5) with duplicate check
+                    # Check each accomplishment
                     for i in range(1, 6):
                         text = normalize_text(row.get(f"accomplishment_{i}", ""))
                         if text:
-                            # Check for duplicates before inserting
                             existing = conn.execute(
                                 select(accomplishments).where(
                                     accomplishments.c.EmployeeID == employee_id,
@@ -264,22 +269,33 @@ if st.button("Submit Accomplishments"):
                                 )
                             ).fetchone()
 
-                            if not existing:
-                                conn.execute(insert(accomplishments).values(
-                                    EmployeeID=employee_id,
-                                    WorkstreamID=workstream_id,
-                                    DateRange=week_date,
-                                    Description=text,
-                                    created_at=datetime.utcnow(),
-                                    entered_by=st.session_state.get("username", "anonymous")
-                                ))
+                            if existing:
+                                duplicates_found.append(text)
+                                continue  # Skip duplicate
 
-            st.success("Accomplishments submitted successfully!")
+                            conn.execute(insert(accomplishments).values(
+                                EmployeeID=employee_id,
+                                WorkstreamID=workstream_id,
+                                DateRange=week_date,
+                                Description=text,
+                                created_at=datetime.utcnow(),
+                                entered_by=st.session_state.get("username", "anonymous")
+                            ))
+                            inserted_count += 1
+
+            # User feedback
+            if inserted_count > 0:
+                st.success(f"{inserted_count} accomplishments submitted successfully!")
+            if duplicates_found:
+                st.warning(f"{len(duplicates_found)} duplicate accomplishments were skipped:\n- " +
+                           "\n- ".join(duplicates_found))
+
             with st.expander("View Submitted Data"):
                 st.dataframe(df)
 
         except Exception as e:
             st.error(f"Error inserting accomplishments: {e}")
+
             
 #######################        
 # --- Internal Note ---
