@@ -33,7 +33,13 @@ def get_engine():
                 # Fallback to Driver 17
                 connection_string = connection_string.replace("ODBC Driver 18", "ODBC Driver 17")
                 params = urllib.parse.quote_plus(connection_string)
-                _engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+                _engine = create_engine(
+                    f"mssql+pyodbc:///?odbc_connect={params}",
+                    pool_size=5,
+                    max_overflow=10,
+                    pool_recycle=1800,  # recycle every 30 min
+                    pool_pre_ping=True  # checks connections before using
+                )
         else:
             params = urllib.parse.quote_plus(connection_string)
             _engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
