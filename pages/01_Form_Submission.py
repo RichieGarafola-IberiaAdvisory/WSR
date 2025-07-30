@@ -225,7 +225,6 @@ accom_df = st.data_editor(
 #######################################
 # --- Submit Accomplishments Button ---
 #######################################
-from sqlalchemy import select
 
 if st.button("Submit Accomplishments"):
     cleaned_accom_df = accom_df.dropna(how="all")
@@ -234,7 +233,7 @@ if st.button("Submit Accomplishments"):
     else:
         try:
             df = cleaned_accom_df.rename(columns=accomplishments_col_map)
-            duplicates_found = []  # Store skipped duplicates
+            duplicates_found = []
             inserted_count = 0
 
             with engine.begin() as conn:
@@ -256,10 +255,11 @@ if st.button("Submit Accomplishments"):
                         else None
                     )
 
-                    # Check each accomplishment
+                    # Insert each accomplishment individually
                     for i in range(1, 6):
                         text = normalize_text(row.get(f"accomplishment_{i}", ""))
                         if text:
+                            # Check duplicates before insert
                             existing = conn.execute(
                                 select(accomplishments).where(
                                     accomplishments.c.EmployeeID == employee_id,
@@ -271,7 +271,7 @@ if st.button("Submit Accomplishments"):
 
                             if existing:
                                 duplicates_found.append(text)
-                                continue  # Skip duplicate
+                                continue
 
                             conn.execute(insert(accomplishments).values(
                                 EmployeeID=employee_id,
@@ -287,15 +287,16 @@ if st.button("Submit Accomplishments"):
             if inserted_count > 0:
                 st.success(f"{inserted_count} accomplishments submitted successfully!")
             if duplicates_found:
-                st.warning(f"{len(duplicates_found)} duplicate accomplishments were skipped:\n- " +
-                           "\n- ".join(duplicates_found))
+                st.warning(
+                    f"{len(duplicates_found)} duplicates skipped:\n"
+                    + "\n".join(f"- {desc}" for desc in duplicates_found)
+                )
 
             with st.expander("View Submitted Data"):
                 st.dataframe(df)
 
         except Exception as e:
             st.error(f"Error inserting accomplishments: {e}")
-
             
 #######################        
 # --- Internal Note ---
