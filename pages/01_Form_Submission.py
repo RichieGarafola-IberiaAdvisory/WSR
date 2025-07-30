@@ -341,7 +341,33 @@ if st.button("Submit Accomplishments", key="submit_accom"):
             st.session_state["accom_df"] = pd.DataFrame([{col: "" for col in accom_columns}])  # Clear form
         except Exception as e:
             st.error(f"Error inserting accomplishments: {e}")
-            
+
+
+########################################
+# Helper function for testing purposes 
+#######################################
+
+def submit_form(name, vendor, labor_category, week_ending):
+    """Helper for tests to simulate a form submission."""
+    from utils import helpers
+
+    if not name.strip() or not vendor or not labor_category or not week_ending:
+        return False
+
+    # Validate date
+    import datetime
+    try:
+        if isinstance(week_ending, str):
+            datetime.datetime.strptime(week_ending, "%Y-%m-%d")
+    except Exception:
+        return False
+
+    emp_id = helpers.get_or_create_employee(None, name, vendor, labor_category)
+    if not emp_id:
+        return False
+
+    return helpers.insert_weekly_report({"EmployeeID": emp_id})
+
             
 #######################        
 # --- Internal Note ---
