@@ -20,10 +20,11 @@ def test_page_imports(page_file):
     # --- Mock SQLAlchemy execution ---
     mock_result = MagicMock()
     mock_result.fetchall.return_value = [
-        (1, 1, 1, "2025-07-01", "Analyst")
+        (1, 1, 1, "2025-07-01", "Analyst", "50%")
     ]
     mock_result.keys.return_value = [
-        "Reporting Week", "EmployeeID", "WorkstreamID", "WeekEnding", "Labor Category"
+        "Reporting Week", "EmployeeID", "WorkstreamID",
+        "WeekEnding", "Labor Category", "Level of Effort (%)"
     ]
     mock_execute = MagicMock(return_value=mock_result)
 
@@ -34,18 +35,20 @@ def test_page_imports(page_file):
         "WorkstreamID": 1,
         "WeekEnding": "2025-07-01",
         "Labor Category": "Analyst",
+        "Level of Effort (%)": "50%",
     }])
 
-    # --- Mock SQLAlchemy Table with proper .c columns ---
-    mock_table = MagicMock()
-    mock_columns = MagicMock()
-    mock_columns.EmployeeID = MagicMock()
-    mock_columns.WorkstreamID = MagicMock()
-    mock_table.c = mock_columns
+    # --- Mock SQLAlchemy Table for joins ---
+    def table_factory(*args, **kwargs):
+        table = MagicMock()
+        table.c = MagicMock()
+        table.c.EmployeeID = MagicMock()
+        table.c.WorkstreamID = MagicMock()
+        return table
 
     with patch("sqlalchemy.engine.base.Connection.execute", mock_execute), \
          patch("pandas.read_sql", MagicMock(return_value=mock_df)), \
-         patch("sqlalchemy.Table", MagicMock(return_value=mock_table)):
+         patch("sqlalchemy.Table", side_effect=table_factory):
         spec = importlib.util.spec_from_file_location("page_module", file_path)
         module = importlib.util.module_from_spec(spec)
         try:
