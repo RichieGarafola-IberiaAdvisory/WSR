@@ -23,9 +23,8 @@ def test_page_imports(page_file):
         (1, 1, 1, "2025-07-01", "Analyst")
     ]
     mock_result.keys.return_value = [
-        "ReportID", "EmployeeID", "WorkstreamID", "WeekEnding", "Labor Category"
+        "Reporting Week", "EmployeeID", "WorkstreamID", "WeekEnding", "Labor Category"
     ]
-
     mock_execute = MagicMock(return_value=mock_result)
 
     # --- Mock pandas.read_sql ---
@@ -37,14 +36,16 @@ def test_page_imports(page_file):
         "Labor Category": "Analyst",
     }])
 
-    # --- Mock SQLAlchemy Table columns (for 04_Accomplishments) ---
-    mock_column = MagicMock()
-    mock_column.EmployeeID = "EmployeeID"
-    mock_column.WorkstreamID = "WorkstreamID"
+    # --- Mock SQLAlchemy Table with proper .c columns ---
+    mock_table = MagicMock()
+    mock_columns = MagicMock()
+    mock_columns.EmployeeID = MagicMock()
+    mock_columns.WorkstreamID = MagicMock()
+    mock_table.c = mock_columns
 
     with patch("sqlalchemy.engine.base.Connection.execute", mock_execute), \
          patch("pandas.read_sql", MagicMock(return_value=mock_df)), \
-         patch("sqlalchemy.Table", MagicMock(return_value=mock_column)):
+         patch("sqlalchemy.Table", MagicMock(return_value=mock_table)):
         spec = importlib.util.spec_from_file_location("page_module", file_path)
         module = importlib.util.module_from_spec(spec)
         try:
