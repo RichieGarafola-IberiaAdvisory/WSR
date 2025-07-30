@@ -1,4 +1,18 @@
 import pytest
+import importlib.util
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+import pandas as pd
+
+
+PAGES_DIR = Path(__file__).parent.parent / "pages"
+PAGE_FILES = [
+    "01_Form_Submission.py",
+    "02_Management_Dashboard.py",
+    "03_HR_KPIs.py",
+    "04_Accomplishments_Dashboard.py",
+]
+
 
 @pytest.mark.parametrize("page_file", PAGE_FILES)
 def test_page_imports(page_file):
