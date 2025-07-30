@@ -133,7 +133,7 @@ if st.button("📤 Submit Weekly Reports"):
             # Begin database transaction
             with engine.begin() as conn:
                 for _, row in cleaned_df.iterrows():
-                    contractor = normalize_text(row.get("contractorname", ""))
+                    contractor = normalize_text(row.get("contractorname", "")).replace(" ", "")
                     if not contractor:
                         
                         # Skip empty contractors
@@ -244,31 +244,42 @@ if st.button("Submit Accomplishments"):
                     workstream_id = get_or_create_workstream(conn, normalize_text(row.get("workstream_name", "")))
 
                     reporting_week = row.get("reporting_week")
-                    week_str = reporting_week.strftime("%m/%d/%Y") if pd.notnull(reporting_week) else ""
+                    week_date = (
+                        pd.to_datetime(reporting_week, errors="coerce").date()
+                        if pd.notnull(reporting_week)
+                        else None
+                    )
 
-                    # Insert each accomplishment (up to 5 per row)
+                    # Insert each accomplishment (up to 5) with duplicate check
                     for i in range(1, 6):
                         text = normalize_text(row.get(f"accomplishment_{i}", ""))
                         if text:
-                            conn.execute(insert(accomplishments).values(
-                                employeeid=employee_id,
-                                workstreamid=workstream_id,
-                                daterange=week_str,
-                                description=text,
-                                
-                                
-                                # Audit fields
-                                created_at=datetime.utcnow(),
-                                entered_by=st.session_state.get("username", "anonymous")
-                            ))
+                            # Check for duplicates before inserting
+                            existing = conn.execute(
+                                select(accomplishments).where(
+                                    accomplishments.c.EmployeeID == employee_id,
+                                    accomplishments.c.WorkstreamID == workstream_id,
+                                    accomplishments.c.DateRange == week_date,
+                                    accomplishments.c.Description == text
+                                )
+                            ).fetchone()
 
-            st.success("✅ Accomplishments submitted successfully!")
+                            if not existing:
+                                conn.execute(insert(accomplishments).values(
+                                    EmployeeID=employee_id,
+                                    WorkstreamID=workstream_id,
+                                    DateRange=week_date,
+                                    Description=text,
+                                    created_at=datetime.utcnow(),
+                                    entered_by=st.session_state.get("username", "anonymous")
+                                ))
+
+            st.success("Accomplishments submitted successfully!")
             with st.expander("View Submitted Data"):
                 st.dataframe(df)
 
         except Exception as e:
-            st.error(f"❌ Error inserting accomplishments: {e}")
-
+            st.error(f"Error inserting accomplishments: {e}")
             
 #######################        
 # --- Internal Note ---
