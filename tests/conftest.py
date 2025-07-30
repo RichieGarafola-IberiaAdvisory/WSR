@@ -1,6 +1,7 @@
 # tests/conftest.py
 import pytest
 from unittest.mock import MagicMock
+from sqlalchemy.sql import Select
 import utils.db as db
 import utils.helpers as helpers
 
@@ -46,5 +47,39 @@ def mock_helpers_functions(monkeypatch):
     """
     if not hasattr(helpers, "insert_weekly_report"):
         monkeypatch.setattr(helpers, "insert_weekly_report", MagicMock(return_value=True))
+
+    yield
+
+
+@pytest.fixture(autouse=True)
+def mock_sqlalchemy_select(monkeypatch):
+    """
+    Mock SQLAlchemy select execution in helpers to avoid real DB access.
+    Simulates query behavior for get_or_create_employee and get_or_create_workstream.
+    """
+    original_execute = MagicMock()
+
+    def fake_execute(self, query, *args, **kwargs):
+        # Simulate behavior based on query contents
+        query_str = str(query).lower()
+
+        # Simulate employee query
+        if "employees" in query_str and "select" in query_str:
+            return MagicMock(
+                mappings=lambda: MagicMock(fetchone=lambda: {"EmployeeID": 1})
+            )
+
+        # Simulate workstream query
+        if "workstreams" in query_str and "select" in query_str:
+            return MagicMock(scalar_one_or_none=lambda: 3)
+
+        # Simulate insert returning an ID
+        if "insert" in query_str:
+            return MagicMock(scalar_one=lambda: 5)
+
+        return MagicMock()
+
+    # Patch execute method on mocked connection objects
+    monkeypatch.setattr("sqlalchemy.engine.base.Connection.execute", fake_execute)
 
     yield
