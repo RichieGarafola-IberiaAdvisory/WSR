@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 import utils.db as db
+import utils.helpers as helpers
 
 @pytest.fixture(autouse=True)
 def mock_metadata(monkeypatch):
@@ -17,3 +18,12 @@ def mock_metadata(monkeypatch):
     db.workstreams = MagicMock()
     db.hourstracking = MagicMock()
     yield
+
+
+
+@pytest.fixture(autouse=True)
+def mock_helpers(monkeypatch):
+    if not hasattr(helpers, "insert_weekly_report"):
+        monkeypatch.setattr(helpers, "insert_weekly_report", MagicMock(return_value=True))
+    yield
+
