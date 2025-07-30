@@ -248,10 +248,10 @@ if st.button("Submit Accomplishments"):
     else:
         try:
             df = cleaned_accom_df.rename(columns=accomplishments_col_map)
+            duplicates_found = []
+            inserted_count = 0
 
-            # Start DB transaction
             with get_engine().begin() as conn:
-                accomplishment_data = []
                 employee_cache = {}
                 workstream_cache = {}
 
@@ -274,27 +274,41 @@ if st.button("Submit Accomplishments"):
                         if pd.notnull(row.get("reporting_week")) else None
                     )
 
-                    for i in range(1, 5 + 1):  # Up to 5 accomplishments
+                    for i in range(1, 6):
                         text = normalize_text(row.get(f"accomplishment_{i}", ""))
                         if text:
-                            accomplishment_data.append({
-                                "EmployeeID": employee_id,
-                                "WorkstreamID": workstream_id,
-                                "DateRange": reporting_week,
-                                "Description": text
-                            })
+                            # Check for duplicates first
+                            existing = conn.execute(
+                                accomplishments.select().where(
+                                    (accomplishments.c.EmployeeID == employee_id) &
+                                    (accomplishments.c.WorkstreamID == workstream_id) &
+                                    (accomplishments.c.DateRange == reporting_week) &
+                                    (accomplishments.c.Description == text)
+                                )
+                            ).fetchone()
 
-                # Bulk insert all accomplishments
-                if accomplishment_data:
-                    conn.execute(insert(accomplishments), accomplishment_data)
+                            if existing:
+                                duplicates_found.append(text)
+                                continue
 
+                            # Insert if not duplicate
+                            conn.execute(insert(accomplishments).values(
+                                EmployeeID=employee_id,
+                                WorkstreamID=workstream_id,
+                                DateRange=reporting_week,
+                                Description=text
+                            ))
+                            inserted_count += 1
 
-            st.success("✅ Accomplishments submitted successfully!")
+            msg = f"Accomplishments submitted: {inserted_count}."
+            if duplicates_found:
+                msg += f" ⚠Skipped {len(duplicates_found)} duplicates."
+            st.success(msg)
             with st.expander("View Submitted Data"):
                 st.dataframe(df)
 
         except Exception as e:
-            st.error(f"❌ Error inserting accomplishments: {e}")
+            st.error(f"Error inserting accomplishments: {e}")
 
             
 #######################        
