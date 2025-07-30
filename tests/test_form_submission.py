@@ -113,3 +113,44 @@ def test_bad_data_rejected(mock_clean, mock_get_emp, mock_insert, form_module):
     assert emp_id is None
     assert success is False
     mock_insert.assert_called_once()
+
+
+
+@pytest.fixture(scope="module")
+def form_module():
+    """Dynamically import 01_Form_Submission.py for testing."""
+    file_path = Path(__file__).parent.parent / "pages" / "01_Form_Submission.py"
+    spec = importlib.util.spec_from_file_location("form", file_path)
+    form = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(form)
+    return form
+
+def test_empty_required_fields(form_module):
+    """Ensure submission fails if required fields are missing."""
+    with patch("utils.helpers.insert_weekly_report", MagicMock(return_value=False)):
+        result = form_module.submit_form(
+            name="", vendor="", labor_category="", week_ending=None
+        )
+        assert result is False
+
+def test_duplicate_submission(form_module):
+    """Ensure duplicate submissions do not create duplicates."""
+    mock_insert = MagicMock(side_effect=[True, False])  # first OK, second blocked
+    with patch("utils.helpers.insert_weekly_report", mock_insert):
+        first = form_module.submit_form("John Doe", "VendorX", "Manager", "2025-07-01")
+        second = form_module.submit_form("John Doe", "VendorX", "Manager", "2025-07-01")
+        assert first is True
+        assert second is False
+
+def test_max_length_fields(form_module):
+    """Ensure long strings are handled gracefully."""
+    long_name = "A" * 300
+    with patch("utils.helpers.insert_weekly_report", MagicMock(return_value=True)):
+        result = form_module.submit_form(long_name, "VendorY", "Engineer", "2025-07-01")
+        assert result is True
+
+def test_invalid_date_format(form_module):
+    """Ensure invalid date is rejected."""
+    with patch("utils.helpers.insert_weekly_report", MagicMock(return_value=False)):
+        result = form_module.submit_form("Jane Doe", "VendorZ", "Lead", "invalid-date")
+        assert result is False
