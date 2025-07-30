@@ -224,7 +224,7 @@ accom_df = st.data_editor(
     num_rows="dynamic"
 )
 
-hash_description(desc):
+def hash_description(desc):
     return hashlib.sha256(desc.encode("utf-8")).hexdigest().upper()
 
 if st.button("Submit Accomplishments"):
