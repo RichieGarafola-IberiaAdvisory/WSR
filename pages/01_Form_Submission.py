@@ -170,21 +170,28 @@ if st.button("Submit Weekly Reports"):
                 emp_map.update({normalize_text(e.Name): e.EmployeeID for e in new_rows})
 
             # Weekly & hours data
-            weekly_data = df.apply(lambda row: {
-                "EmployeeID": emp_map[normalize_text(row["contractorname"])],
-                "WeekStartDate": row["weekstartdate"],
-                "DivisionCommand": normalize_text(row["divisioncommand"]),
-                "WorkProductTitle": normalize_text(row["workproducttitle"]),
-                "ContributionDescription": normalize_text(row["contributiondescription"]),
-                "Status": normalize_text(row["status"]),
-                "PlannedOrUnplanned": normalize_text(row["plannedorunplanned"]),
-                "DateCompleted": row["datecompleted"],
-                "DistinctNFR": normalize_text(row["distinctnfr"]),
-                "DistinctCAP": normalize_text(row["distinctcap"]),
-                "EffortPercentage": row["effortpercentage"],
-                "ContractorName": normalize_text(row["contractorname"]),
-                "GovtTAName": normalize_text(row["govttaname"]),
-            }, axis=1).tolist()
+            def build_weekly_row(row):
+                contractor = normalize_text(row["contractorname"])
+                if not contractor or contractor not in emp_map:
+                    return None  # Skip if contractor is missing or not resolved
+                return {
+                    "EmployeeID": emp_map[contractor],
+                    "WeekStartDate": row["weekstartdate"],
+                    "DivisionCommand": normalize_text(row["divisioncommand"]),
+                    "WorkProductTitle": normalize_text(row["workproducttitle"]),
+                    "ContributionDescription": normalize_text(row["contributiondescription"]),
+                    "Status": normalize_text(row["status"]),
+                    "PlannedOrUnplanned": normalize_text(row["plannedorunplanned"]),
+                    "DateCompleted": row["datecompleted"],
+                    "DistinctNFR": normalize_text(row["distinctnfr"]),
+                    "DistinctCAP": normalize_text(row["distinctcap"]),
+                    "EffortPercentage": row["effortpercentage"],
+                    "ContractorName": contractor,
+                    "GovtTAName": normalize_text(row["govttaname"]),
+                }
+            
+            weekly_data = df.apply(build_weekly_row, axis=1).dropna().tolist()
+
 
             hours_data = df[df["hoursworked"] > 0].apply(lambda row: {
                 "EmployeeID": emp_map[normalize_text(row["contractorname"])],
