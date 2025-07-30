@@ -17,17 +17,24 @@ def test_page_imports(page_file):
     """Smoke test: ensure each Streamlit page loads without DB/data errors."""
     file_path = PAGES_DIR / page_file
 
-    # Mock DB and pandas calls to avoid real queries and missing columns
-    with patch("utils.db.get_db_connection", MagicMock()), \
-         patch("sqlalchemy.engine.base.Connection.execute",
-               MagicMock(return_value=MagicMock(
-                   fetchall=lambda: [],
-                   mappings=lambda: MagicMock(fetchone=lambda: None)
-               ))), \
-         patch("pandas.read_sql",
-               MagicMock(return_value=pd.DataFrame(columns=[
-                   "Reporting Week", "EmployeeID", "WorkstreamID"
-               ]))):
+    # Mock DB execution
+    mock_execute = MagicMock(return_value=MagicMock(
+        fetchall=lambda: [],
+        mappings=lambda: MagicMock(fetchone=lambda: None),
+        scalar_one_or_none=lambda: None,
+    ))
+
+    # Mock pandas read_sql with columns commonly expected in pages
+    mock_df = pd.DataFrame(columns=[
+        "Reporting Week",
+        "EmployeeID",
+        "WorkstreamID",
+        "WeekEnding",
+        "Labor Category",
+    ])
+
+    with patch("sqlalchemy.engine.base.Connection.execute", mock_execute), \
+         patch("pandas.read_sql", MagicMock(return_value=mock_df)):
         spec = importlib.util.spec_from_file_location("page_module", file_path)
         module = importlib.util.module_from_spec(spec)
         try:
