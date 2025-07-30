@@ -3,30 +3,35 @@
 import pytest
 from unittest.mock import patch, MagicMock
 import datetime
+import importlib.util
+from pathlib import Path
+
+@pytest.fixture(scope="module")
+def form_module():
+    """Dynamically import 01_Form_Submission.py for testing."""
+    file_path = Path(__file__).parent.parent / "pages" / "01_Form_Submission.py"
+    spec = importlib.util.spec_from_file_location("form", file_path)
+    form = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(form)
+    return form
 
 
 @patch("utils.helpers.get_or_create_employee")
 @patch("utils.helpers.clean_dataframe_dates_hours")
-def test_cleaning_and_insertion_pipeline(mock_clean, mock_get_emp):
-    """Basic check to verify cleaning and employee lookup pipeline works."""
-    from pages import _01_Form_Submission as form
-
+def test_cleaning_and_insertion_pipeline(mock_clean, mock_get_emp, form_module):
+    """Verify cleaning and employee lookup pipeline works."""
     mock_clean.return_value = []
     mock_get_emp.return_value = 1
 
-    monday = form.get_most_recent_monday()
+    monday = form_module.get_most_recent_monday()
     assert isinstance(monday, datetime.date)
 
 
 @patch("utils.helpers.insert_weekly_report")
 @patch("utils.helpers.get_or_create_employee")
 @patch("utils.helpers.clean_dataframe_dates_hours")
-def test_successful_form_submission(mock_clean, mock_get_emp, mock_insert):
-    """Tests that a valid form submission goes through cleaning, employee retrieval,
-    and database insertion successfully."""
-    from pages import _01_Form_Submission as form
-
-    # Setup mocks
+def test_successful_form_submission(mock_clean, mock_get_emp, mock_insert, form_module):
+    """Tests a valid form submission pipeline."""
     mock_clean.return_value = [{"cleaned": "data"}]
     mock_get_emp.return_value = 1
     mock_insert.return_value = True
@@ -49,7 +54,6 @@ def test_successful_form_submission(mock_clean, mock_get_emp, mock_insert):
         "govt_ta": "Alex Smith"
     }
 
-    # Simulate the cleaned pipeline
     cleaned_data = mock_clean(test_data)
     emp_id = mock_get_emp(
         test_data["name"],
@@ -58,7 +62,6 @@ def test_successful_form_submission(mock_clean, mock_get_emp, mock_insert):
     )
     success = mock_insert(cleaned_data)
 
-    # Assertions
     assert isinstance(test_data["name"], str)
     assert isinstance(test_data["reporting_week"], datetime.date)
     assert isinstance(test_data["time_spent_hours"], float)
@@ -75,17 +78,14 @@ def test_successful_form_submission(mock_clean, mock_get_emp, mock_insert):
 @patch("utils.helpers.insert_weekly_report")
 @patch("utils.helpers.get_or_create_employee")
 @patch("utils.helpers.clean_dataframe_dates_hours")
-def test_bad_data_rejected(mock_clean, mock_get_emp, mock_insert):
-    """Ensures that submissions with missing or invalid fields do not proceed."""
-    from pages import _01_Form_Submission as form
-
-    # Setup mocks
+def test_bad_data_rejected(mock_clean, mock_get_emp, mock_insert, form_module):
+    """Ensures invalid submissions do not insert into the database."""
     mock_clean.return_value = [{"cleaned": "data"}]
-    mock_get_emp.return_value = None  # simulate failure to find/create employee
+    mock_get_emp.return_value = None
     mock_insert.return_value = False
 
     bad_data = {
-        "name": "   ",  # invalid
+        "name": "   ",
         "reporting_week": None,
         "labor_category": "",
         "vendor": "",
@@ -93,12 +93,12 @@ def test_bad_data_rejected(mock_clean, mock_get_emp, mock_insert):
         "division_command": "",
         "work_product_title": "",
         "brief_description_of_individuals_contribution": "",
-        "work_product_status": "Unknown Status",  # invalid status
+        "work_product_status": "Unknown Status",
         "planned_or_unplanned_monthly_pmr": "Invalid Option",
         "if_completed": None,
         "distinct_nfr": "",
         "distinct_cap": "",
-        "time_spent_hours": -5,  # invalid hours
+        "time_spent_hours": -5,
         "govt_ta": ""
     }
 
@@ -108,10 +108,8 @@ def test_bad_data_rejected(mock_clean, mock_get_emp, mock_insert):
         bad_data["labor_category"],
         bad_data["vendor"]
     )
-
     success = mock_insert(cleaned_data)
 
-    # We expect failure in employee creation and insert
     assert emp_id is None
     assert success is False
     mock_insert.assert_called_once()
