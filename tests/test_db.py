@@ -1,6 +1,14 @@
 # tests/test_db.py
 import pytest
 from utils import db
+import os
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("CI") == "true",
+    reason="Skipping live DB tests in CI environment"
+)
+
 
 def test_get_engine_returns_engine():
     engine = db.get_engine()
