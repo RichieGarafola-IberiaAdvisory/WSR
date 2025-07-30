@@ -1,3 +1,5 @@
+import pytest
+
 @pytest.mark.parametrize("page_file", PAGE_FILES)
 def test_page_imports(page_file):
     """Smoke test: ensure each Streamlit page loads without DB/data errors."""
