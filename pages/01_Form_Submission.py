@@ -162,7 +162,7 @@ if st.button("Submit Weekly Reports"):
             if missing:
                 conn.execute(insert(employees), [{"Name": normalize_text(m)} for m in missing])
                 new_rows = conn.execute(
-                    select([employees.c.Name, employees.c.EmployeeID])
+                    select(employees.c.Name, employees.c.EmployeeID)
                     .where(employees.c.Name.in_(missing))
                 ).fetchall()
                 emp_map.update({normalize_text(e.Name): e.EmployeeID for e in new_rows})
@@ -224,7 +224,7 @@ accom_df = st.data_editor(
     num_rows="dynamic"
 )
 
-def hash_description(desc):
+hash_description(desc):
     return hashlib.sha256(desc.encode("utf-8")).hexdigest().upper()
 
 if st.button("Submit Accomplishments"):
@@ -248,6 +248,9 @@ if st.button("Submit Accomplishments"):
                         "hash": hash_description(text),
                     })
         accom_df_flat = pd.DataFrame(accom_rows)
+        if accom_df_flat.empty:
+            st.warning("No valid accomplishments entered.")
+            return
 
         # Resolve employees and workstreams
         with get_engine().begin() as conn:
@@ -255,7 +258,7 @@ if st.button("Submit Accomplishments"):
             ws_names = accom_df_flat["workstream"].unique()
 
             emp_existing = conn.execute(
-                select([employees.c.Name, employees.c.EmployeeID])
+                select(employees.c.Name, employees.c.EmployeeID)
                 .where(employees.c.Name.in_(emp_names))
             ).fetchall()
             emp_map = {normalize_text(e.Name): e.EmployeeID for e in emp_existing}
@@ -271,7 +274,7 @@ if st.button("Submit Accomplishments"):
             if missing_emp:
                 conn.execute(insert(employees), [{"Name": normalize_text(e)} for e in missing_emp])
                 new_rows = conn.execute(
-                    select([employees.c.Name, employees.c.EmployeeID])
+                    select(employees.c.Name, employees.c.EmployeeID)
                     .where(employees.c.Name.in_(missing_emp))
                 ).fetchall()
                 emp_map.update({normalize_text(e.Name): e.EmployeeID for e in new_rows})
@@ -280,7 +283,7 @@ if st.button("Submit Accomplishments"):
             if missing_ws:
                 conn.execute(insert(workstreams), [{"Name": normalize_text(w)} for w in missing_ws])
                 new_ws = conn.execute(
-                    select([workstreams.c.Name, workstreams.c.WorkstreamID])
+                    select(workstreams.c.Name, workstreams.c.WorkstreamID)
                     .where(workstreams.c.Name.in_(missing_ws))
                 ).fetchall()
                 ws_map.update({normalize_text(w.Name): w.WorkstreamID for w in new_ws})
@@ -295,9 +298,10 @@ if st.button("Submit Accomplishments"):
 
             new_data = []
             for _, r in accom_df_flat.iterrows():
+                workstream_id = ws_map.get(normalize_text(r["workstream"])) or None
                 key = (
                     emp_map[normalize_text(r["name"])],
-                    ws_map[normalize_text(r["workstream"])],
+                    workstream_id,
                     r["date"],
                     r["hash"]
                 )
@@ -309,8 +313,12 @@ if st.button("Submit Accomplishments"):
                         "Description": r["description"]
                     })
 
-            if new_data:
-                conn.execute(insert(accomplishments), new_data)
+            try:
+                if new_data:
+                    conn.execute(insert(accomplishments), new_data)
+            except Exception as e:
+                st.error(f"Error inserting accomplishments: {e}")
+
 
     with_retry(insert_accomplishments)
     st.success("Accomplishments submitted successfully!")
