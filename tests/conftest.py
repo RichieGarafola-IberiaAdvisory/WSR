@@ -81,7 +81,6 @@ def mock_sqlalchemy_execute(monkeypatch):
         q = str(query).lower()
 
         # --- Employees ---
-        # First SELECT call for existing employee
         if "employees" in q and "select" in q:
             called = getattr(self, "_emp_called", 0)
             self._emp_called = called + 1
@@ -92,10 +91,8 @@ def mock_sqlalchemy_execute(monkeypatch):
                     "LaborCategory": "Unknown LCAT"
                 }))
             else:
-                # Second call = update executed
-                return MagicMock()
+                return MagicMock()  # Simulate UPDATE
 
-        # Insert employee
         if "employees" in q and "insert" in q:
             return MagicMock(scalar_one=lambda: 5)
 
@@ -111,11 +108,37 @@ def mock_sqlalchemy_execute(monkeypatch):
         if "workstreams" in q and "insert" in q:
             return MagicMock(scalar_one=lambda: 7)
 
-        # --- Default insert/update ---
+        # Default insert/update
         if "insert" in q:
             return MagicMock(scalar_one=lambda: 99)
 
         return MagicMock()
 
     monkeypatch.setattr("sqlalchemy.engine.base.Connection.execute", fake_execute)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def patch_magicmock_execute(monkeypatch):
+    """Ensure MagicMock connections in tests simulate SELECT + UPDATE calls."""
+
+    original_init = MagicMock.__init__
+
+    def custom_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self._execute_calls = 0
+
+        def fake_execute(*args, **kwargs):
+            self._execute_calls += 1
+            if self._execute_calls == 1:
+                return MagicMock(mappings=lambda: MagicMock(fetchone=lambda: {
+                    "EmployeeID": 1,
+                    "VendorName": "",
+                    "LaborCategory": "Unknown LCAT"
+                }))
+            return MagicMock()  # Second call = UPDATE
+
+        self.execute = MagicMock(side_effect=fake_execute)
+
+    monkeypatch.setattr(MagicMock, "__init__", custom_init)
     yield
