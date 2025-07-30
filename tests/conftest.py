@@ -1,13 +1,19 @@
 import pytest
-from sqlalchemy import create_engine
-from utils import db
+from unittest.mock import MagicMock
+import utils.db as db
 
-@pytest.fixture(scope="session")
-def engine():
-    return db.get_engine()
+@pytest.fixture(autouse=True)
+def mock_metadata(monkeypatch):
+    """Mock database metadata and tables for all tests."""
+    mock_meta = MagicMock()
+    mock_meta.tables = {
+        "Employees": MagicMock(),
+        "Workstreams": MagicMock()
+    }
+    monkeypatch.setattr(db, "get_metadata", lambda: mock_meta)
 
-@pytest.fixture
-def mock_connection(monkeypatch):
-    conn = create_engine("sqlite:///:memory:")
-    monkeypatch.setattr(db, "get_engine", lambda: conn)
-    return conn
+    # Mock table objects
+    db.employees = MagicMock()
+    db.workstreams = MagicMock()
+    db.hourstracking = MagicMock()
+    yield
