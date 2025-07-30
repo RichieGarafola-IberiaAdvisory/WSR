@@ -17,14 +17,18 @@ def test_page_imports(page_file):
     """Smoke test: ensure each Streamlit page loads without DB/data errors."""
     file_path = PAGES_DIR / page_file
 
-    # Mock DB execution
-    mock_execute = MagicMock(return_value=MagicMock(
-        fetchall=lambda: [(1, 1, 1, "2025-07-01", "Analyst")],
-        mappings=lambda: MagicMock(fetchone=lambda: {"EmployeeID": 1}),
-        scalar_one_or_none=lambda: 1,
-    ))
+    # --- Mock SQLAlchemy execution ---
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = [
+        (1, 1, 1, "2025-07-01", "Analyst")
+    ]
+    mock_result.keys.return_value = [
+        "ReportID", "EmployeeID", "WorkstreamID", "WeekEnding", "Labor Category"
+    ]
 
-    # ✅ Non-empty DataFrame with expected columns
+    mock_execute = MagicMock(return_value=mock_result)
+
+    # --- Mock pandas.read_sql ---
     mock_df = pd.DataFrame([{
         "Reporting Week": "2025-07-01",
         "EmployeeID": 1,
@@ -33,8 +37,14 @@ def test_page_imports(page_file):
         "Labor Category": "Analyst",
     }])
 
+    # --- Mock SQLAlchemy Table columns (for 04_Accomplishments) ---
+    mock_column = MagicMock()
+    mock_column.EmployeeID = "EmployeeID"
+    mock_column.WorkstreamID = "WorkstreamID"
+
     with patch("sqlalchemy.engine.base.Connection.execute", mock_execute), \
-         patch("pandas.read_sql", MagicMock(return_value=mock_df)):
+         patch("pandas.read_sql", MagicMock(return_value=mock_df)), \
+         patch("sqlalchemy.Table", MagicMock(return_value=mock_column)):
         spec = importlib.util.spec_from_file_location("page_module", file_path)
         module = importlib.util.module_from_spec(spec)
         try:
