@@ -29,6 +29,12 @@ st.set_page_config(
     # wide layout for more screen space
     layout="wide")
 
+
+for tbl in [("accomplishments", accomplishments), ("employees", employees), ("weekly_reports", weekly_reports), ("workstreams", workstreams)]:
+    if tbl[1] is None:
+        st.error(f"Table {tbl[0]} is not initialized correctly.")
+
+
 st.markdown("""
     <style>
         /* Blue Header for titles */
