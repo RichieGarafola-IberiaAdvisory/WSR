@@ -4,7 +4,7 @@
 import streamlit as st  # Used to build the interactive web app
 import pandas as pd  # Used for working with tabular data
 from sqlalchemy import create_engine, MetaData, Table, select, insert, func  # For database operations
-from datetime import date, timedelta  # For working with dates
+from datetime import date, timedelta, datetime  # For working with dates
 
 # Import shared modules
 from utils.db import engine, employees, weekly_reports, hourstracking, accomplishments, load_tables
@@ -133,7 +133,7 @@ if st.button("📤 Submit Weekly Reports"):
             # Begin database transaction
             with engine.begin() as conn:
                 for _, row in cleaned_df.iterrows():
-                    contractor = normalize_text(row.get("contractorname", "")).replace(" ", "")
+                    contractor = normalize_text(row.get("contractorname", ""))
                     if not contractor:
                         
                         # Skip empty contractors
@@ -249,49 +249,24 @@ if st.button("Submit Accomplishments"):
                     )
 
                     reporting_week = row.get("reporting_week")
-                    week_date = (
-                        pd.to_datetime(reporting_week, errors="coerce").date()
-                        if pd.notnull(reporting_week)
-                        else None
-                    )
-
+                    week_str = reporting_week.strftime("%m/%d/%Y") if pd.notnull(reporting_week) else ""
+                    
                     # Insert each accomplishment individually
                     for i in range(1, 6):
                         text = normalize_text(row.get(f"accomplishment_{i}", ""))
                         if text:
-                            # Check duplicates before insert
-                            existing = conn.execute(
-                                select(accomplishments).where(
-                                    accomplishments.c.EmployeeID == employee_id,
-                                    accomplishments.c.WorkstreamID == workstream_id,
-                                    accomplishments.c.DateRange == week_date,
-                                    accomplishments.c.Description == text
-                                )
-                            ).fetchone()
-
-                            if existing:
-                                duplicates_found.append(text)
-                                continue
-
                             conn.execute(insert(accomplishments).values(
-                                EmployeeID=employee_id,
-                                WorkstreamID=workstream_id,
-                                DateRange=week_date,
-                                Description=text,
+                                employeeid=employee_id,
+                                workstreamid=workstream_id,
+                                daterange=week_str,
+                                description=text,
+                                
+                                # Audit fields
                                 created_at=datetime.utcnow(),
                                 entered_by=st.session_state.get("username", "anonymous")
                             ))
-                            inserted_count += 1
 
-            # User feedback
-            if inserted_count > 0:
-                st.success(f"{inserted_count} accomplishments submitted successfully!")
-            if duplicates_found:
-                st.warning(
-                    f"{len(duplicates_found)} duplicates skipped:\n"
-                    + "\n".join(f"- {desc}" for desc in duplicates_found)
-                )
-
+            st.success("Accomplishments submitted successfully!")
             with st.expander("View Submitted Data"):
                 st.dataframe(df)
 
