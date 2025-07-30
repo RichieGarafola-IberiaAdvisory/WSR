@@ -19,19 +19,19 @@ def test_page_imports(page_file):
 
     # Mock DB execution
     mock_execute = MagicMock(return_value=MagicMock(
-        fetchall=lambda: [],
-        mappings=lambda: MagicMock(fetchone=lambda: None),
-        scalar_one_or_none=lambda: None,
+        fetchall=lambda: [(1, 1, 1, "2025-07-01", "Analyst")],
+        mappings=lambda: MagicMock(fetchone=lambda: {"EmployeeID": 1}),
+        scalar_one_or_none=lambda: 1,
     ))
 
-    # Mock pandas read_sql with columns commonly expected in pages
-    mock_df = pd.DataFrame(columns=[
-        "Reporting Week",
-        "EmployeeID",
-        "WorkstreamID",
-        "WeekEnding",
-        "Labor Category",
-    ])
+    # ✅ Non-empty DataFrame with expected columns
+    mock_df = pd.DataFrame([{
+        "Reporting Week": "2025-07-01",
+        "EmployeeID": 1,
+        "WorkstreamID": 1,
+        "WeekEnding": "2025-07-01",
+        "Labor Category": "Analyst",
+    }])
 
     with patch("sqlalchemy.engine.base.Connection.execute", mock_execute), \
          patch("pandas.read_sql", MagicMock(return_value=mock_df)):
