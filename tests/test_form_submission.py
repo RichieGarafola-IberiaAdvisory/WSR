@@ -135,8 +135,9 @@ def test_empty_required_fields(form_module):
 
 def test_duplicate_submission(form_module):
     """Ensure duplicate submissions do not create duplicates."""
-    mock_insert = MagicMock(side_effect=[True, False])  # first OK, second blocked
-    with patch("utils.helpers.insert_weekly_report", mock_insert):
+    mock_insert = MagicMock(side_effect=[True, False])
+    with patch("utils.helpers.insert_weekly_report", mock_insert), \
+         patch("utils.helpers.get_or_create_employee", MagicMock(return_value=1)):
         first = form_module.submit_form("John Doe", "VendorX", "Manager", "2025-07-01")
         second = form_module.submit_form("John Doe", "VendorX", "Manager", "2025-07-01")
         assert first is True
@@ -145,7 +146,8 @@ def test_duplicate_submission(form_module):
 def test_max_length_fields(form_module):
     """Ensure long strings are handled gracefully."""
     long_name = "A" * 300
-    with patch("utils.helpers.insert_weekly_report", MagicMock(return_value=True)):
+    with patch("utils.helpers.insert_weekly_report", MagicMock(return_value=True)), \
+         patch("utils.helpers.get_or_create_employee", MagicMock(return_value=1)):
         result = form_module.submit_form(long_name, "VendorY", "Engineer", "2025-07-01")
         assert result is True
 
