@@ -17,9 +17,15 @@ hourstracking = None
 
 
 def get_engine():
-    """Create and cache SQLAlchemy engine for Azure SQL."""
+    """Create and cache SQLAlchemy engine for Azure SQL or SQLite fallback during tests."""
     global _engine
     if _engine is None:
+        # Detect test environment
+        if os.getenv("PYTEST_CURRENT_TEST") or os.getenv("DATABASE_URL", "").startswith("sqlite"):
+            # Use in-memory SQLite for testing
+            _engine = create_engine("sqlite:///:memory:", future=True)
+            return _engine
+
         connection_string = st.secrets.get("DATABASE_URL") or os.getenv("DATABASE_URL")
         if not connection_string:
             raise RuntimeError("DATABASE_URL not found")
@@ -31,8 +37,8 @@ def get_engine():
                 f"mssql+pyodbc:///?odbc_connect={params}",
                 pool_size=5,
                 max_overflow=10,
-                pool_recycle=1800,  # recycle every 30 min
-                pool_pre_ping=True  # check connections before using
+                pool_recycle=1800,
+                pool_pre_ping=True
             )
         except Exception:
             # Fallback to Driver 17
@@ -47,7 +53,6 @@ def get_engine():
             )
 
     return _engine
-
 
 def get_metadata():
     """Reflect and cache database metadata."""
