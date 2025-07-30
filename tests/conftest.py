@@ -119,30 +119,3 @@ def mock_sqlalchemy_execute(monkeypatch):
 
     monkeypatch.setattr("sqlalchemy.engine.base.Connection.execute", fake_execute)
     yield
-
-
-
-
-
-
-
-
-@pytest.fixture(autouse=True)
-def patch_test_magicmock(monkeypatch):
-    """Patch MagicMock used directly in tests to simulate multiple DB calls."""
-    original_execute = MagicMock.execute
-
-    def fake_execute(self, *args, **kwargs):
-        self._call_count = getattr(self, "_call_count", 0) + 1
-        if self._call_count == 1:
-            return MagicMock(mappings=lambda: MagicMock(fetchone=lambda: {
-                "EmployeeID": 1,
-                "VendorName": "",
-                "LaborCategory": "Unknown LCAT"
-            }))
-        return MagicMock()  # Simulate second UPDATE call
-
-    monkeypatch.setattr(MagicMock, "execute", fake_execute)
-    yield
-    monkeypatch.setattr(MagicMock, "execute", original_execute)
-
