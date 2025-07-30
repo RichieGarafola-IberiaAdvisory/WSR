@@ -3,13 +3,13 @@
 # Import required libraries
 import streamlit as st  # Used to build the interactive web app
 import pandas as pd  # Used for working with tabular data
-from sqlalchemy import insert  # For database operations
+from sqlalchemy import insert, select  # For database operations
 from sqlalchemy.exc import OperationalError
 import time
-from datetime import datetime  # For working with dates
+import hashlib
 
 # Import shared modules
-from utils.db import get_engine, employees, weekly_reports, hourstracking, accomplishments
+from utils.db import get_engine, employees, weekly_reports, hourstracking, accomplishments, workstreams
 
 from utils.helpers import (
     get_most_recent_monday,
@@ -103,6 +103,19 @@ accom_columns = list(accomplishments_col_map.keys())
 # Get most recent Monday for pre-populating the form
 most_recent_monday = get_most_recent_monday()
 
+
+def with_retry(func, max_attempts=3, delay=2):
+    """Retries DB operations to handle transient connection drops."""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return func()
+        except OperationalError as e:
+            if attempt < max_attempts:
+                st.warning(f"Database connection lost. Retrying ({attempt}/{max_attempts})...")
+                time.sleep(delay)
+            else:
+                raise
+
 ################################
 # --- Weekly Reports Section ---
 ################################
@@ -139,7 +152,7 @@ if st.button("Submit Weekly Reports"):
         contractors = df["contractorname"].dropna().unique()
         with get_engine().begin() as conn:
             existing = conn.execute(
-                select([employees.c.Name, employees.c.EmployeeID])
+                select(employees.c.Name, employees.c.EmployeeID)
                 .where(employees.c.Name.in_(contractors))
             ).fetchall()
             emp_map = {normalize_text(e.Name): e.EmployeeID for e in existing}
@@ -248,7 +261,7 @@ if st.button("Submit Accomplishments"):
             emp_map = {normalize_text(e.Name): e.EmployeeID for e in emp_existing}
 
             ws_existing = conn.execute(
-                select([workstreams.c.Name, workstreams.c.WorkstreamID])
+                select(workstreams.c.Name, workstreams.c.WorkstreamID)
                 .where(workstreams.c.Name.in_(ws_names))
             ).fetchall()
             ws_map = {normalize_text(w.Name): w.WorkstreamID for w in ws_existing}
@@ -274,8 +287,8 @@ if st.button("Submit Accomplishments"):
 
             # Check existing hashes
             existing = conn.execute(
-                select([accomplishments.c.EmployeeID, accomplishments.c.WorkstreamID,
-                        accomplishments.c.DateRange, accomplishments.c.DescriptionHash])
+                select(accomplishments.c.EmployeeID, accomplishments.c.WorkstreamID,
+                        accomplishments.c.DateRange, accomplishments.c.DescriptionHash)
                 .where(accomplishments.c.EmployeeID.in_([emp_map[n] for n in emp_map]))
             ).fetchall()
             existing_set = {(e.EmployeeID, e.WorkstreamID, e.DateRange, e.DescriptionHash) for e in existing}
