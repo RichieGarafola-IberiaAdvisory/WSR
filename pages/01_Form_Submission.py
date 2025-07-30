@@ -154,58 +154,80 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
     else:
         try:
             def insert_weekly():
-                df = cleaned_df.rename(columns=weekly_report_col_map)
-                df = clean_dataframe_dates_hours(
-                    df,
-                    date_cols=["weekstartdate", "datecompleted"],
-                    numeric_cols=["hoursworked"]
+    df = cleaned_df.rename(columns=weekly_report_col_map)
+    df = clean_dataframe_dates_hours(
+        df,
+        date_cols=["weekstartdate", "datecompleted"],
+        numeric_cols=["hoursworked"]
+    )
+    df["effortpercentage"] = (df["hoursworked"] / 40) * 100
+
+    with get_engine().begin() as conn:
+        weekly_data, hours_data, employee_cache = [], [], {}
+        duplicates_found, inserted_count = [], 0
+
+        for _, row in df.iterrows():
+            contractor = normalize_text(row.get("contractorname", ""))
+            if not contractor:
+                continue
+
+            if contractor not in employee_cache:
+                employee_cache[contractor] = get_or_create_employee(
+                    conn,
+                    contractor_name=contractor,
+                    vendor=normalize_text(row.get("vendorname", "")),
+                    laborcategory=normalize_text(row.get("laborcategory", ""))
                 )
-                df["effortpercentage"] = (df["hoursworked"] / 40) * 100
+            employee_id = employee_cache[contractor]
 
-                with get_engine().begin() as conn:
-                    weekly_data, hours_data, employee_cache = [], [], {}
+            # --- Duplicate Check ---
+            existing = conn.execute(
+                weekly_reports.select().where(
+                    (weekly_reports.c.EmployeeID == employee_id) &
+                    (weekly_reports.c.WeekStartDate == row["weekstartdate"]) &
+                    (weekly_reports.c.WorkProductTitle == normalize_text(row.get("workproducttitle", "")))
+                )
+            ).fetchone()
 
-                    for _, row in df.iterrows():
-                        contractor = normalize_text(row.get("contractorname", ""))
-                        if not contractor:
-                            continue
-                        if contractor not in employee_cache:
-                            employee_cache[contractor] = get_or_create_employee(
-                                conn,
-                                contractor_name=contractor,
-                                vendor=normalize_text(row.get("vendorname", "")),
-                                laborcategory=normalize_text(row.get("laborcategory", ""))
-                            )
-                        employee_id = employee_cache[contractor]
-                        weekly_data.append({
-                            "EmployeeID": employee_id,
-                            "WeekStartDate": row["weekstartdate"],
-                            "DivisionCommand": normalize_text(row.get("divisioncommand", "")),
-                            "WorkProductTitle": normalize_text(row.get("workproducttitle", "")),
-                            "ContributionDescription": normalize_text(row.get("contributiondescription", "")),
-                            "Status": normalize_text(row.get("status", "")),
-                            "PlannedOrUnplanned": normalize_text(row.get("plannedorunplanned", "")),
-                            "DateCompleted": row["datecompleted"],
-                            "DistinctNFR": normalize_text(row.get("distinctnfr", "")),
-                            "DistinctCAP": normalize_text(row.get("distinctcap", "")),
-                            "EffortPercentage": row["effortpercentage"],
-                            "ContractorName": contractor,
-                            "GovtTAName": normalize_text(row.get("govttaname", "")),
-                        })
-                        if row["hoursworked"] > 0:
-                            hours_data.append({
-                                "EmployeeID": employee_id,
-                                "WorkstreamID": None,
-                                "ReportingWeek": row["weekstartdate"],
-                                "HoursWorked": row["hoursworked"],
-                                "LevelOfEffort": row["effortpercentage"],
-                            })
+            if existing:
+                duplicates_found.append(row.get("workproducttitle"))
+                continue
 
-                    # Bulk insert all rows
-                    if weekly_data:
-                        conn.execute(insert(weekly_reports), weekly_data)
-                    if hours_data:
-                        conn.execute(insert(hourstracking), hours_data)
+            weekly_data.append({
+                "EmployeeID": employee_id,
+                "WeekStartDate": row["weekstartdate"],
+                "DivisionCommand": normalize_text(row.get("divisioncommand", "")),
+                "WorkProductTitle": normalize_text(row.get("workproducttitle", "")),
+                "ContributionDescription": normalize_text(row.get("contributiondescription", "")),
+                "Status": normalize_text(row.get("status", "")),
+                "PlannedOrUnplanned": normalize_text(row.get("plannedorunplanned", "")),
+                "DateCompleted": row["datecompleted"],
+                "DistinctNFR": normalize_text(row.get("distinctnfr", "")),
+                "DistinctCAP": normalize_text(row.get("distinctcap", "")),
+                "EffortPercentage": row["effortpercentage"],
+                "ContractorName": contractor,
+                "GovtTAName": normalize_text(row.get("govttaname", "")),
+            })
+            inserted_count += 1
+
+            if row["hoursworked"] > 0:
+                hours_data.append({
+                    "EmployeeID": employee_id,
+                    "WorkstreamID": None,
+                    "ReportingWeek": row["weekstartdate"],
+                    "HoursWorked": row["hoursworked"],
+                    "LevelOfEffort": row["effortpercentage"],
+                })
+
+        if weekly_data:
+            conn.execute(insert(weekly_reports), weekly_data)
+        if hours_data:
+            conn.execute(insert(hourstracking), hours_data)
+
+    msg = f"Weekly Reports submitted: {inserted_count}."
+    if duplicates_found:
+        msg += f" Skipped {len(duplicates_found)} duplicates."
+    st.success(msg)
 
             with_retry(insert_weekly)
             st.success("Weekly Reports submitted successfully!")
