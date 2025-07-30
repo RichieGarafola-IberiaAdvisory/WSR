@@ -9,7 +9,14 @@ import time
 from datetime import datetime  # For working with dates
 
 # Import shared modules
-from utils.db import get_engine, employees, weekly_reports, hourstracking, accomplishments
+from utils.db import (
+    get_engine,
+    employees,
+    weekly_reports,
+    hourstracking,
+    accomplishments,
+    workstreams
+)
 
 from utils.helpers import (
     get_most_recent_monday,
@@ -28,12 +35,6 @@ st.set_page_config(
     page_title="Weekly Form Submission", 
     # wide layout for more screen space
     layout="wide")
-
-
-for tbl in [("accomplishments", accomplishments), ("employees", employees), ("weekly_reports", weekly_reports), ("workstreams", workstreams)]:
-    if tbl[1] is None:
-        st.error(f"Table {tbl[0]} is not initialized correctly.")
-
 
 st.markdown("""
     <style>
