@@ -4,6 +4,8 @@
 import streamlit as st  # Used to build the interactive web app
 import pandas as pd  # Used for working with tabular data
 from sqlalchemy import insert  # For database operations
+from sqlalchemy.exc import OperationalError
+import time
 from datetime import datetime  # For working with dates
 
 # Import shared modules
@@ -128,86 +130,88 @@ weekly_df = st.data_editor(
     num_rows="dynamic"
 )
 
+# --- Retry Wrapper ---
+def with_retry(func, max_attempts=3, delay=2):
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return func()
+        except OperationalError as e:
+            if attempt < max_attempts:
+                st.warning(f"Database connection lost. Retrying ({attempt}/{max_attempts})...")
+                time.sleep(delay)
+            else:
+                raise
+
 
 ######################################
 # --- Submit Weekly Reports Button ---
 ######################################
 
-if st.button("📤 Submit Weekly Reports"):
+if st.button("Submit Weekly Reports", key="submit_weekly"):
     cleaned_df = weekly_df.dropna(how="all")
     if cleaned_df.empty:
         st.warning("Please fill at least one row before submitting.")
     else:
         try:
-            cleaned_df = cleaned_df.rename(columns=weekly_report_col_map)
-            cleaned_df = clean_dataframe_dates_hours(
-                cleaned_df,
-                date_cols=["weekstartdate", "datecompleted"],
-                numeric_cols=["hoursworked"]
-            )
-            cleaned_df["effortpercentage"] = (cleaned_df["hoursworked"] / 40) * 100
+            def insert_weekly():
+                df = cleaned_df.rename(columns=weekly_report_col_map)
+                df = clean_dataframe_dates_hours(
+                    df,
+                    date_cols=["weekstartdate", "datecompleted"],
+                    numeric_cols=["hoursworked"]
+                )
+                df["effortpercentage"] = (df["hoursworked"] / 40) * 100
 
-            with get_engine().begin() as conn:
-                weekly_data = []
-                hours_data = []
-                employee_cache = {}
+                with get_engine().begin() as conn:
+                    weekly_data, hours_data, employee_cache = [], [], {}
 
-                for _, row in cleaned_df.iterrows():
-                    contractor = normalize_text(row.get("contractorname", ""))
-                    if not contractor:
-                        continue
-
-                    # Cache employee IDs to avoid redundant DB calls
-                    if contractor not in employee_cache:
-                        employee_cache[contractor] = get_or_create_employee(
-                            conn,
-                            contractor_name=contractor,
-                            vendor=normalize_text(row.get("vendorname", "")),
-                            laborcategory=normalize_text(row.get("laborcategory", ""))
-                        )
-
-                    employee_id = employee_cache[contractor]
-
-                    weekly_data.append({
-                        "EmployeeID": employee_id,
-                        "WeekStartDate": row["weekstartdate"],
-                        "DivisionCommand": normalize_text(row.get("divisioncommand", "")),
-                        "WorkProductTitle": normalize_text(row.get("workproducttitle", "")),
-                        "ContributionDescription": normalize_text(row.get("contributiondescription", "")),
-                        "Status": normalize_text(row.get("status", "")),
-                        "PlannedOrUnplanned": normalize_text(row.get("plannedorunplanned", "")),
-                        "DateCompleted": row["datecompleted"],
-                        "DistinctNFR": normalize_text(row.get("distinctnfr", "")),
-                        "DistinctCAP": normalize_text(row.get("distinctcap", "")),
-                        "EffortPercentage": row["effortpercentage"],
-                        "ContractorName": contractor,
-                        "GovtTAName": normalize_text(row.get("govttaname", "")),
-                    })
-
-                    if row["hoursworked"] > 0:
-                        hours_data.append({
+                    for _, row in df.iterrows():
+                        contractor = normalize_text(row.get("contractorname", ""))
+                        if not contractor:
+                            continue
+                        if contractor not in employee_cache:
+                            employee_cache[contractor] = get_or_create_employee(
+                                conn,
+                                contractor_name=contractor,
+                                vendor=normalize_text(row.get("vendorname", "")),
+                                laborcategory=normalize_text(row.get("laborcategory", ""))
+                            )
+                        employee_id = employee_cache[contractor]
+                        weekly_data.append({
                             "EmployeeID": employee_id,
-                            "WorkstreamID": None,
-                            "ReportingWeek": row["weekstartdate"],
-                            "HoursWorked": row["hoursworked"],
-                            "LevelOfEffort": row["effortpercentage"],
+                            "WeekStartDate": row["weekstartdate"],
+                            "DivisionCommand": normalize_text(row.get("divisioncommand", "")),
+                            "WorkProductTitle": normalize_text(row.get("workproducttitle", "")),
+                            "ContributionDescription": normalize_text(row.get("contributiondescription", "")),
+                            "Status": normalize_text(row.get("status", "")),
+                            "PlannedOrUnplanned": normalize_text(row.get("plannedorunplanned", "")),
+                            "DateCompleted": row["datecompleted"],
+                            "DistinctNFR": normalize_text(row.get("distinctnfr", "")),
+                            "DistinctCAP": normalize_text(row.get("distinctcap", "")),
+                            "EffortPercentage": row["effortpercentage"],
+                            "ContractorName": contractor,
+                            "GovtTAName": normalize_text(row.get("govttaname", "")),
                         })
+                        if row["hoursworked"] > 0:
+                            hours_data.append({
+                                "EmployeeID": employee_id,
+                                "WorkstreamID": None,
+                                "ReportingWeek": row["weekstartdate"],
+                                "HoursWorked": row["hoursworked"],
+                                "LevelOfEffort": row["effortpercentage"],
+                            })
 
-                # Bulk insert all rows
-                if weekly_data:
-                    conn.execute(insert(weekly_reports), weekly_data)
-                if hours_data:
-                    conn.execute(insert(hourstracking), hours_data)
+                    # Bulk insert all rows
+                    if weekly_data:
+                        conn.execute(insert(weekly_reports), weekly_data)
+                    if hours_data:
+                        conn.execute(insert(hourstracking), hours_data)
 
-
-
-
-            st.success("✅ Weekly Reports submitted successfully!")
-            with st.expander("View Submitted Data"):
-                st.dataframe(cleaned_df)
-
+            with_retry(insert_weekly)
+            st.success("Weekly Reports submitted successfully!")
+            st.session_state["weekly_df"] = pd.DataFrame([{col: "" for col in weekly_columns}])  # Clear form
         except Exception as e:
-            st.error(f"❌ Error inserting weekly reports: {e}")
+            st.error(f"Error inserting weekly reports: {e}")
 
 
 
@@ -241,75 +245,70 @@ accom_df = st.data_editor(
 #######################################
 # --- Submit Accomplishments Button ---
 #######################################
-if st.button("Submit Accomplishments"):
+if st.button("Submit Accomplishments", key="submit_accom"):
     cleaned_accom_df = accom_df.dropna(how="all")
     if cleaned_accom_df.empty:
         st.warning("Please fill at least one row of accomplishments.")
     else:
         try:
-            df = cleaned_accom_df.rename(columns=accomplishments_col_map)
-            duplicates_found = []
-            inserted_count = 0
+            def insert_accomplishments():
+                df = cleaned_accom_df.rename(columns=accomplishments_col_map)
+                duplicates_found, inserted_count = [], 0
 
-            with get_engine().begin() as conn:
-                employee_cache = {}
-                workstream_cache = {}
+                with get_engine().begin() as conn:
+                    employee_cache, workstream_cache = {}, {}
+                    for _, row in df.iterrows():
+                        contractor = normalize_text(row.get("name", ""))
+                        if not contractor:
+                            continue
+                        if contractor not in employee_cache:
+                            employee_cache[contractor] = get_or_create_employee(conn, contractor)
+                        employee_id = employee_cache[contractor]
 
-                for _, row in df.iterrows():
-                    contractor = normalize_text(row.get("name", ""))
-                    if not contractor:
-                        continue
+                        workstream_name = normalize_text(row.get("workstream_name", ""))
+                        if workstream_name not in workstream_cache:
+                            workstream_cache[workstream_name] = get_or_create_workstream(conn, workstream_name)
+                        workstream_id = workstream_cache[workstream_name]
 
-                    if contractor not in employee_cache:
-                        employee_cache[contractor] = get_or_create_employee(conn, contractor)
-                    employee_id = employee_cache[contractor]
+                        reporting_week = (
+                            pd.to_datetime(row.get("reporting_week"), errors='coerce').date()
+                            if pd.notnull(row.get("reporting_week")) else None
+                        )
 
-                    workstream_name = normalize_text(row.get("workstream_name", ""))
-                    if workstream_name not in workstream_cache:
-                        workstream_cache[workstream_name] = get_or_create_workstream(conn, workstream_name)
-                    workstream_id = workstream_cache[workstream_name]
+                        for i in range(1, 6):
+                            text = normalize_text(row.get(f"accomplishment_{i}", ""))
+                            if text:
+                                existing = conn.execute(
+                                    accomplishments.select().where(
+                                        (accomplishments.c.EmployeeID == employee_id) &
+                                        (accomplishments.c.WorkstreamID == workstream_id) &
+                                        (accomplishments.c.DateRange == reporting_week) &
+                                        (accomplishments.c.Description == text)
+                                    )
+                                ).fetchone()
 
-                    reporting_week = (
-                        pd.to_datetime(row.get("reporting_week"), errors='coerce').date()
-                        if pd.notnull(row.get("reporting_week")) else None
-                    )
+                                if existing:
+                                    duplicates_found.append(text)
+                                    continue
 
-                    for i in range(1, 6):
-                        text = normalize_text(row.get(f"accomplishment_{i}", ""))
-                        if text:
-                            # Check for duplicates first
-                            existing = conn.execute(
-                                accomplishments.select().where(
-                                    (accomplishments.c.EmployeeID == employee_id) &
-                                    (accomplishments.c.WorkstreamID == workstream_id) &
-                                    (accomplishments.c.DateRange == reporting_week) &
-                                    (accomplishments.c.Description == text)
-                                )
-                            ).fetchone()
+                                conn.execute(insert(accomplishments).values(
+                                    EmployeeID=employee_id,
+                                    WorkstreamID=workstream_id,
+                                    DateRange=reporting_week,
+                                    Description=text
+                                ))
+                                inserted_count += 1
 
-                            if existing:
-                                duplicates_found.append(text)
-                                continue
+                msg = f"Accomplishments submitted: {inserted_count}."
+                if duplicates_found:
+                    msg += f" Skipped {len(duplicates_found)} duplicates."
+                st.success(msg)
 
-                            # Insert if not duplicate
-                            conn.execute(insert(accomplishments).values(
-                                EmployeeID=employee_id,
-                                WorkstreamID=workstream_id,
-                                DateRange=reporting_week,
-                                Description=text
-                            ))
-                            inserted_count += 1
-
-            msg = f"Accomplishments submitted: {inserted_count}."
-            if duplicates_found:
-                msg += f" ⚠Skipped {len(duplicates_found)} duplicates."
-            st.success(msg)
-            with st.expander("View Submitted Data"):
-                st.dataframe(df)
-
+            with_retry(insert_accomplishments)
+            st.session_state["accom_df"] = pd.DataFrame([{col: "" for col in accom_columns}])  # Clear form
         except Exception as e:
             st.error(f"Error inserting accomplishments: {e}")
-
+            
             
 #######################        
 # --- Internal Note ---
