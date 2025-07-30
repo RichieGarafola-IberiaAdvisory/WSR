@@ -9,7 +9,9 @@ import time
 import hashlib
 
 # Import shared modules
-from utils.db import get_engine, employees, weekly_reports, hourstracking, accomplishments, workstreams
+from utils.db import get_engine, employees, weekly_reports, hourstracking, accomplishments, workstreams, load_tables
+
+load_tables()
 
 from utils.helpers import (
     get_most_recent_monday,
