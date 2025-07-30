@@ -15,7 +15,8 @@ from utils.db import (
     weekly_reports,
     hourstracking,
     accomplishments,
-    workstreams
+    workstreams,
+    load_tables
 )
 
 from utils.helpers import (
@@ -25,6 +26,9 @@ from utils.helpers import (
     clean_dataframe_dates_hours,
     normalize_text
 )
+
+# Ensure tables are loaded
+load_tables()
 
 ####################
 # --- Page Setup ---
