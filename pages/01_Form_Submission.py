@@ -16,7 +16,8 @@ from utils.db import (
     hourstracking,
     accomplishments,
     workstreams,
-    load_tables
+    load_tables,
+    get_session_data
 )
 
 from utils.helpers import (
@@ -29,6 +30,9 @@ from utils.helpers import (
 
 # Ensure tables are loaded
 load_tables()
+
+# Load cached session data (only fetches DB if cache expired or cleared)
+session_data = get_session_data()
 
 ####################
 # --- Page Setup ---
@@ -239,9 +243,12 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                 if duplicates_found:
                     msg += f" Skipped {len(duplicates_found)} duplicates."
                 st.success(msg)
+                session_data = get_session_data()  # refresh cached session data
+
 
             with_retry(insert_weekly)
             st.success("Weekly Reports submitted successfully!")
+            session_data = get_session_data()  # refresh cached session data
             st.session_state["weekly_df"] = pd.DataFrame([{col: "" for col in weekly_columns}])  # Clear form
         except Exception as e:
             st.error(f"Error inserting weekly reports: {e}")
