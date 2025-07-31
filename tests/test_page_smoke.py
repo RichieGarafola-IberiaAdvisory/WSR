@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pandas as pd
 
-
 PAGES_DIR = Path(__file__).parent.parent / "pages"
 PAGE_FILES = [
     "01_Form_Submission.py",
@@ -12,7 +11,6 @@ PAGE_FILES = [
     "03_HR_KPIs.py",
     "04_Accomplishments_Dashboard.py",
 ]
-
 
 @pytest.mark.parametrize("page_file", PAGE_FILES)
 def test_page_imports(page_file):
@@ -24,18 +22,18 @@ def test_page_imports(page_file):
         (1, 1, 1, "2025-07-01", "Analyst", "50%", "Vendor A", 40)
     ]
     mock_result.keys.return_value = [
-        "Reporting Week", "EmployeeID", "WorkstreamID",
-        "WeekEnding", "Labor Category", "Level of Effort (%)",
+        "ReportID", "EmployeeID", "WorkstreamID",
+        "WeekEnding", "LaborCategory", "Level of Effort (%)",
         "Vendor Name", "Hours"
     ]
     mock_execute = MagicMock(return_value=mock_result)
 
     mock_df = pd.DataFrame([{
-        "Reporting Week": "2025-07-01",
+        "ReportID": 1,
         "EmployeeID": 1,
         "WorkstreamID": 1,
         "WeekEnding": "2025-07-01",
-        "Labor Category": "Analyst",
+        "LaborCategory": "Analyst",
         "Level of Effort (%)": "50%",
         "Vendor Name": "Vendor A",
         "Hours": 40,
@@ -50,15 +48,12 @@ def test_page_imports(page_file):
 
     # Mock stmt.columns.keys() to match fetchall()
     mock_stmt = MagicMock()
-    mock_stmt.columns.keys.return_value = [
-        "ReportID", "EmployeeID", "WorkstreamID",
-        "WeekEnding", "LaborCategory", "Level of Effort (%)"
-    ]
+    mock_stmt.columns.keys.return_value = mock_result.keys.return_value
 
     with patch("sqlalchemy.engine.base.Connection.execute", mock_execute), \
          patch("pandas.read_sql", MagicMock(return_value=mock_df)), \
          patch("sqlalchemy.Table", side_effect=table_factory), \
-         patch("pages.03_HR_KPIs.stmt", mock_stmt, create=True):
+         patch(f"pages.{page_file[:-3]}.stmt", mock_stmt, create=True):
         spec = importlib.util.spec_from_file_location("page_module", file_path)
         module = importlib.util.module_from_spec(spec)
         try:
