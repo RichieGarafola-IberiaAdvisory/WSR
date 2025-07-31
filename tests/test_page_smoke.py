@@ -17,31 +17,23 @@ def test_page_imports(page_file):
     """Smoke test: ensure each Streamlit page loads without DB/data errors."""
     file_path = PAGES_DIR / page_file
 
-    # Mock database fetch
+    # 8 database values
+    db_values = (1, 1, 1, "2025-07-01", "Analyst", "50%", "Vendor A", 40)
+    db_columns = [
+        "ReportID", "EmployeeID", "WorkstreamID",
+        "WeekEnding", "LaborCategory", "Level of Effort (%)",
+        "Vendor Name", "Hours"
+    ]
+
     mock_result = MagicMock()
-    mock_result.fetchall.return_value = [
-        (1, 1, 1, "2025-07-01", "Analyst", "50%", "Vendor A", 40)
-    ]
-    mock_result.keys.return_value = [
-        "Reporting Week", "ReportID", "EmployeeID", "WorkstreamID",
-        "WeekEnding", "LaborCategory", "Level of Effort (%)", "Vendor Name", "Hours"
-    ]
+    mock_result.fetchall.return_value = [db_values]
+    mock_result.keys.return_value = db_columns
     mock_execute = MagicMock(return_value=mock_result)
 
-    # Mock DataFrame to include all columns
-    mock_df = pd.DataFrame([{
-        "Reporting Week": "2025-07-01",
-        "ReportID": 1,
-        "EmployeeID": 1,
-        "WorkstreamID": 1,
-        "WeekEnding": "2025-07-01",
-        "LaborCategory": "Analyst",
-        "Level of Effort (%)": "50%",
-        "Vendor Name": "Vendor A",
-        "Hours": 40,
-    }])
+    # Mock DataFrame
+    mock_df = pd.DataFrame([dict(zip(db_columns, db_values))])
 
-    # Mock SQLAlchemy Table with required columns
+    # Mock SQLAlchemy Table
     def table_factory(name, *args, **kwargs):
         table = MagicMock()
         table.c = MagicMock()
@@ -49,9 +41,9 @@ def test_page_imports(page_file):
             setattr(table.c, col, MagicMock())
         return table
 
-    # Mock stmt with 8 columns
+    # Mock stmt (matching 8 columns)
     mock_stmt = MagicMock()
-    mock_stmt.columns.keys.return_value = mock_result.keys.return_value
+    mock_stmt.columns.keys.return_value = db_columns
 
     with patch("sqlalchemy.engine.base.Connection.execute", mock_execute), \
          patch("pandas.read_sql", MagicMock(return_value=mock_df)), \
