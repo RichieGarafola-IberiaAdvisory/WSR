@@ -6,7 +6,7 @@ import plotly.express as px  # For creating visualizations
 import re  # For text cleaning using regular expressions
 
 # Import shared modules
-from utils.db import get_engine
+from utils.db import get_engine, get_data
 from utils.queries import weekly_reports_with_employees
 
 
@@ -55,19 +55,61 @@ st.image("images/Iberia-Advisory.png", width=250)
 st.title("Management Dashboard") 
 st.caption("Visualize and filter team effort across vendors, divisions, and contractors.")
 
-############################
-# --- Load Weekly Report Data ---
-############################
-@st.cache_data(ttl=600)
-def load_weekly_data():
-    with get_engine().connect() as conn:
-        result = conn.execute(text(weekly_reports_with_employees))
-        df = pd.DataFrame(result.fetchall(), columns=result.keys())
+#################################
+# --- Refresh Data on Demand ---
+#################################
+if st.button("🔄 Refresh Data"):
+    from utils.db import load_all_data
+    load_all_data.clear()
+    if "session_data" in st.session_state:
+        del st.session_state["session_data"]
+    st.experimental_rerun()
 
-    df.columns = [re.sub(r"\s+", " ", col).strip() for col in df.columns]
+
+##################################
+# --- Load Weekly Report Data ---
+#################################
+# @st.cache_data(ttl=600)
+# def load_weekly_data():
+#     with get_engine().connect() as conn:
+#         result = conn.execute(text(weekly_reports_with_employees))
+#         df = pd.DataFrame(result.fetchall(), columns=result.keys())
+
+#     df.columns = [re.sub(r"\s+", " ", col).strip() for col in df.columns]
+#     return df
+
+# df = load_weekly_data()
+
+@st.cache_data(ttl=8 * 3600)
+def get_weekly_df():
+    df = get_data("WeeklyReports")  # Pulls from cached data
+    employees_df = get_data("Employees")
+
+    # Join weekly reports with employees for enriched data
+    df = df.merge(
+        employees_df,
+        how="left",
+        left_on="EmployeeID",
+        right_on="EmployeeID"
+    )
+
+    # Rename columns to match your expected schema
+    df.rename(columns={
+        "VendorName": "Vendor Name",
+        "DivisionCommand": "Division/Command",
+        "WorkProductTitle": "Work Product Title",
+        "EffortPercentage": "Level of Effort (%)",
+        "WeekStartDate": "Reporting Week",
+        "ContractorName": "Contractor (Last Name, First Name)",
+        "GovtTAName": "Govt TA (Last Name, First Name)",
+        "Status": "Work Product Status",
+        "PlannedOrUnplanned": "Planned or Unplanned"
+    }, inplace=True)
+
     return df
 
-df = load_weekly_data()
+df = get_weekly_df()
+
 
 # Incase there is a missing dataset, provide a warning
 if df.empty:
