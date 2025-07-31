@@ -1,37 +1,46 @@
 import pytest
-import importlib.util
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 import pandas as pd
+from unittest.mock import patch, MagicMock
+import importlib
+from pathlib import Path
 
-PAGES_DIR = Path(__file__).parent.parent / "pages"
-PAGE_FILES = [
-    "01_Form_Submission.py",
-    "02_Management_Dashboard.py",
-    "03_HR_KPIs.py",
-    "04_Accomplishments_Dashboard.py",
-]
+PAGES_DIR = Path("pages")
+PAGE_FILES = [f.name for f in PAGES_DIR.glob("*.py") if not f.name.startswith("__")]
 
 @pytest.mark.parametrize("page_file", PAGE_FILES)
 def test_page_imports(page_file):
-    """Smoke test: ensure each Streamlit page loads without DB/data errors."""
-    file_path = PAGES_DIR / page_file
+    """
+    Smoke test: Ensure each Streamlit page loads without DB/data errors.
+    Automatically adapts to each page's required SQL columns.
+    """
+    module_name = f"pages.{page_file[:-3]}"
+    
+    # Dynamically import the page module
+    page_module = importlib.import_module(module_name)
 
-    # 8 database values
-    db_values = (1, 1, 1, "2025-07-01", "Analyst", "50%", "Vendor A", 40)
-    db_columns = [
-        "ReportID", "EmployeeID", "WorkstreamID",
-        "WeekEnding", "LaborCategory", "Level of Effort (%)",
-        "Vendor Name", "Hours"
-    ]
+    # Detect stmt columns if available
+    stmt_columns = getattr(getattr(page_module, "stmt", None), "columns", None)
+    if stmt_columns is not None:
+        stmt_keys = list(stmt_columns.keys())
+    else:
+        # Fallback for pages without stmt
+        stmt_keys = [
+            "ReportID", "EmployeeID", "WorkstreamID",
+            "WeekEnding", "LaborCategory", "Level of Effort (%)",
+            "Vendor Name", "Hours"
+        ]
 
+    # Generate dummy DB row with same number of columns
+    db_values = tuple(range(1, len(stmt_keys) + 1))
+
+    # Mock fetch result
     mock_result = MagicMock()
     mock_result.fetchall.return_value = [db_values]
-    mock_result.keys.return_value = db_columns
+    mock_result.keys.return_value = stmt_keys
     mock_execute = MagicMock(return_value=mock_result)
 
     # Mock DataFrame
-    mock_df = pd.DataFrame([dict(zip(db_columns, db_values))])
+    mock_df = pd.DataFrame([dict(zip(stmt_keys, db_values))])
 
     # Mock SQLAlchemy Table
     def table_factory(name, *args, **kwargs):
@@ -41,17 +50,12 @@ def test_page_imports(page_file):
             setattr(table.c, col, MagicMock())
         return table
 
-    # Mock stmt (matching 8 columns)
+    # Mock stmt itself (matching dynamic columns)
     mock_stmt = MagicMock()
-    mock_stmt.columns.keys.return_value = db_columns
+    mock_stmt.columns.keys.return_value = stmt_keys
 
     with patch("sqlalchemy.engine.base.Connection.execute", mock_execute), \
          patch("pandas.read_sql", MagicMock(return_value=mock_df)), \
          patch("sqlalchemy.Table", side_effect=table_factory), \
-         patch(f"pages.{page_file[:-3]}.stmt", mock_stmt, create=True):
-        spec = importlib.util.spec_from_file_location("page_module", file_path)
-        module = importlib.util.module_from_spec(spec)
-        try:
-            spec.loader.exec_module(module)
-        except Exception as e:
-            pytest.fail(f"Failed to import {page_file}: {e}")
+         patch(f"{module_name}.stmt", mock_stmt, create=True):
+        importlib.reload(page_module)
