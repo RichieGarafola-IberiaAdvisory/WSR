@@ -1,14 +1,11 @@
 # Import necessary libraries
 import streamlit as st  # For creating the interactive web app
-from sqlalchemy import text  # For database connection and raw SQL execution
 import pandas as pd  # For working with tabular data
 import plotly.express as px  # For creating visualizations
 import re  # For text cleaning using regular expressions
 
 # Import shared modules
-from utils.db import get_engine, get_data
-from utils.queries import weekly_reports_with_employees
-
+from utils.db import get_data
 
 ############################
 # --- Page Configuration ---
@@ -82,38 +79,42 @@ if st.button("🔄 Refresh Data"):
 
 @st.cache_data(ttl=8 * 3600)
 def get_weekly_df():
-    df = get_data("WeeklyReports")  # Pulls from cached data
-    employees_df = get_data("Employees")
-
-    # Join weekly reports with employees for enriched data
-    df = df.merge(
-        employees_df,
-        how="left",
-        left_on="EmployeeID",
-        right_on="EmployeeID"
-    )
-
-    # Rename columns to match your expected schema
-    df.rename(columns={
-        "VendorName": "Vendor Name",
-        "DivisionCommand": "Division/Command",
-        "WorkProductTitle": "Work Product Title",
-        "EffortPercentage": "Level of Effort (%)",
-        "WeekStartDate": "Reporting Week",
-        "ContractorName": "Contractor (Last Name, First Name)",
-        "GovtTAName": "Govt TA (Last Name, First Name)",
-        "Status": "Work Product Status",
-        "PlannedOrUnplanned": "Planned or Unplanned"
-    }, inplace=True)
-
-    return df
+    try:
+        df = get_data("WeeklyReports")  # Pulls from cached data
+        employees_df = get_data("Employees")
+    
+        # Join weekly reports with employees for enriched data
+        df = df.merge(
+            employees_df,
+            how="left",
+            left_on="EmployeeID",
+            right_on="EmployeeID"
+        )
+    
+        # Rename columns to match your expected schema
+        df.rename(columns={
+            "VendorName": "Vendor Name",
+            "DivisionCommand": "Division/Command",
+            "WorkProductTitle": "Work Product Title",
+            "EffortPercentage": "Level of Effort (%)",
+            "WeekStartDate": "Reporting Week",
+            "ContractorName": "Contractor (Last Name, First Name)",
+            "GovtTAName": "Govt TA (Last Name, First Name)",
+            "Status": "Work Product Status",
+            "PlannedOrUnplanned": "Planned or Unplanned"
+        }, inplace=True)
+    
+        return df
+    except Exception:
+        return pd.DataFrame()  # Empty DataFrame if DB is offline
 
 df = get_weekly_df()
 
 
 # Incase there is a missing dataset, provide a warning
 if df.empty:
-    st.warning("No weekly report data available.")
+    st.warning("⚠️ Database is currently offline or no weekly report data is available.")
+    st.info("Once the database is restored, the dashboard will automatically display data.")
     st.stop()
 
 #########################
