@@ -5,7 +5,7 @@ import pandas as pd  # For working with tabular data
 import plotly.express as px  # For generating interactive charts
 
 
-from utils.db import get_engine, employees, weekly_reports
+from utils.db import get_engine, employees, weekly_reports, get_data, load_all_data
 from utils.helpers import normalize_text
 
 
@@ -59,48 +59,93 @@ st.image("images/Iberia-Advisory.png", width=250)
 st.title("HR Management Dashboard")
 st.caption("Track contractor activity, coverage, and labor category distribution.")
 
+##########################
+# --- Refresh Button ---
+##########################
+
+if st.button("🔄 Refresh HR Data"):
+    load_all_data.clear()
+    if "session_data" in st.session_state:
+        del st.session_state["session_data"]
+    st.experimental_rerun()
+
+
 ################################
 # --- Data Loader ---
 ################################
 # Cache the function output for 10 minutes
-@st.cache_data(ttl=600)
-def load_hr_data():
-    # Join weekly reports and employees on employee ID
-    j = join(
-        weekly_reports, 
-        employees, 
-        weekly_reports.c.EmployeeID == employees.c.EmployeeID
-    )
+# @st.cache_data(ttl=600)
+# def load_hr_data():
+#     # Join weekly reports and employees on employee ID
+#     j = join(
+#         weekly_reports, 
+#         employees, 
+#         weekly_reports.c.EmployeeID == employees.c.EmployeeID
+#     )
     
-    stmt = select(
-        weekly_reports,
-        employees.c.LaborCategory
-    ).select_from(j)
+#     stmt = select(
+#         weekly_reports,
+#         employees.c.LaborCategory
+#     ).select_from(j)
 
-    # Execute query and load into DataFrame
-    with get_engine().connect() as conn:
-        df = pd.DataFrame(conn.execute(stmt).fetchall(), columns=stmt.columns.keys())
+#     # Execute query and load into DataFrame
+#     with get_engine().connect() as conn:
+#         df = pd.DataFrame(conn.execute(stmt).fetchall(), columns=stmt.columns.keys())
 
-    # Rename columns for clarity
+#     # Rename columns for clarity
+#     df.rename(columns={
+#         'WeekStartDate': 'Reporting Week',
+#         'DateCompleted': 'If Completed, Date Completed',
+#         'Status': 'Work Product Status',
+#         'PlannedOrUnplanned': 'Planned or Unplanned',
+#         'EffortPercentage': 'Level of Effort (%)',
+#         'ContractorName': 'Contractor (Last Name, First Name)',
+#         'WorkProductTitle': 'Work Product Title',
+#         'DivisionCommand': 'Division/Command',
+#         'GovtTAName': 'Govt TA (Last Name, First Name)',
+#         'DistinctNFR': 'Distinct NFR',
+#         'DistinctCAP': 'Distinct CAP',
+#         'LaborCategory': 'Labor Category'
+#     }, inplace=True)
+
+#     return df
+
+# # Load the data
+# df = load_hr_data()
+
+# Cache the function output for 8 hours
+@st.cache_data(ttl=8 * 3600)
+def load_hr_data():
+    weekly = get_data("WeeklyReports")
+    employees_df = get_data("Employees")
+
+    # Merge tables
+    df = weekly.merge(
+        employees_df[["EmployeeID", "LaborCategory", "Name"]],
+        on="EmployeeID",
+        how="left"
+    )
+
+    # Rename columns
     df.rename(columns={
-        'WeekStartDate': 'Reporting Week',
-        'DateCompleted': 'If Completed, Date Completed',
-        'Status': 'Work Product Status',
-        'PlannedOrUnplanned': 'Planned or Unplanned',
-        'EffortPercentage': 'Level of Effort (%)',
-        'ContractorName': 'Contractor (Last Name, First Name)',
-        'WorkProductTitle': 'Work Product Title',
-        'DivisionCommand': 'Division/Command',
-        'GovtTAName': 'Govt TA (Last Name, First Name)',
-        'DistinctNFR': 'Distinct NFR',
-        'DistinctCAP': 'Distinct CAP',
-        'LaborCategory': 'Labor Category'
+        "WeekStartDate": "Reporting Week",
+        "DateCompleted": "If Completed, Date Completed",
+        "Status": "Work Product Status",
+        "PlannedOrUnplanned": "Planned or Unplanned",
+        "EffortPercentage": "Level of Effort (%)",
+        "ContractorName": "Contractor (Last Name, First Name)",
+        "WorkProductTitle": "Work Product Title",
+        "DivisionCommand": "Division/Command",
+        "GovtTAName": "Govt TA (Last Name, First Name)",
+        "DistinctNFR": "Distinct NFR",
+        "DistinctCAP": "Distinct CAP",
+        "LaborCategory": "Labor Category"
     }, inplace=True)
 
     return df
 
-# Load the data
 df = load_hr_data()
+
 
 ############################
 # --- Data Cleaning ---
@@ -178,17 +223,22 @@ unplanned_hours = df[df["Planned or Unplanned"] == "unplanned"]["Hours"].sum()
 unplanned_pct = (unplanned_hours / total_hours * 100) if total_hours > 0 else 0
 
 # --- Fetch Expected Contractors Dynamically ---
-@st.cache_data(ttl=600)
+
+# @st.cache_data(ttl=600)
+# def get_expected_contractors():
+#     with get_engine().connect() as conn:
+#         stmt = select(employees.c.Name)
+#         results = conn.execute(stmt).fetchall()
+
+#     # Create DataFrame with proper column name
+#     contractor_names = pd.DataFrame(results, columns=["Name"])["Name"].tolist()
+
+#     return {normalize_text(name) for name in contractor_names if name}
+
+@st.cache_data(ttl=8 * 3600)
 def get_expected_contractors():
-    with get_engine().connect() as conn:
-        stmt = select(employees.c.Name)
-        results = conn.execute(stmt).fetchall()
-
-    # Create DataFrame with proper column name
-    contractor_names = pd.DataFrame(results, columns=["Name"])["Name"].tolist()
-
-    return {normalize_text(name) for name in contractor_names if name}
-
+    employees_df = get_data("Employees")
+    return {normalize_text(name) for name in employees_df["Name"].dropna().unique()}
 
 expected_contractors = get_expected_contractors()
 
@@ -302,33 +352,51 @@ with row3_col2:
 # --- Heatmap: Hours by Contractor and Month ---
 st.subheader("Monthly Hours Heatmap by Contractor")
 
-@st.cache_data(ttl=600)
-def load_heatmap_data():
-    query = text("""
-        SELECT 
-            e.Name AS Contractor,
-            DATEFROMPARTS(YEAR(wr.WeekStartDate), MONTH(wr.WeekStartDate), 1) AS Month,
-            SUM((wr.EffortPercentage / 100.0) * 40) AS Hours
-        FROM WeeklyReports wr
-        JOIN Employees e ON wr.EmployeeID = e.EmployeeID
-        GROUP BY 
-            e.Name,
-            DATEFROMPARTS(YEAR(wr.WeekStartDate), MONTH(wr.WeekStartDate), 1)
-        ORDER BY Month
-    """)
+# @st.cache_data(ttl=600)
+# def load_heatmap_data():
+#     query = text("""
+#         SELECT 
+#             e.Name AS Contractor,
+#             DATEFROMPARTS(YEAR(wr.WeekStartDate), MONTH(wr.WeekStartDate), 1) AS Month,
+#             SUM((wr.EffortPercentage / 100.0) * 40) AS Hours
+#         FROM WeeklyReports wr
+#         JOIN Employees e ON wr.EmployeeID = e.EmployeeID
+#         GROUP BY 
+#             e.Name,
+#             DATEFROMPARTS(YEAR(wr.WeekStartDate), MONTH(wr.WeekStartDate), 1)
+#         ORDER BY Month
+#     """)
     
-    with get_engine().connect() as conn:
-        df_heatmap = pd.DataFrame(conn.execute(query).fetchall(), columns=["Contractor", "Month", "Hours"])
+#     with get_engine().connect() as conn:
+#         df_heatmap = pd.DataFrame(conn.execute(query).fetchall(), columns=["Contractor", "Month", "Hours"])
     
-    return df_heatmap
+#     return df_heatmap
 
-# Fetch aggregated data and pivot for heatmap
-heatmap_data = load_heatmap_data()
-heatmap_df = (
-    heatmap_data
-    .pivot(index="Contractor", columns="Month", values="Hours")
-    .fillna(0)
-)
+# # Fetch aggregated data and pivot for heatmap
+# heatmap_data = load_heatmap_data()
+# heatmap_df = (
+#     heatmap_data
+#     .pivot(index="Contractor", columns="Month", values="Hours")
+#     .fillna(0)
+# )
+
+@st.cache_data(ttl=8 * 3600)
+def load_heatmap_data():
+    weekly = get_data("WeeklyReports")
+    employees_df = get_data("Employees")
+
+    df = weekly.merge(employees_df[["EmployeeID", "Name"]], on="EmployeeID", how="left")
+    df["Month"] = pd.to_datetime(df["WeekStartDate"]).dt.to_period("M").dt.to_timestamp()
+    df["Hours"] = (df["EffortPercentage"] / 100) * 40
+
+    return (
+        df.groupby(["Name", "Month"], as_index=False)["Hours"]
+        .sum()
+        .rename(columns={"Name": "Contractor"})
+    )
+
+
+heatmap_df = load_heatmap_data().pivot(index="Contractor", columns="Month", values="Hours").fillna(0)
 
 st.dataframe(
     heatmap_df.style.background_gradient(axis=1, cmap="Blues"),
