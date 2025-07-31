@@ -9,16 +9,24 @@ import time
 from datetime import datetime  # For working with dates
 
 # Import shared modules
+# from utils.db import (
+#     get_engine,
+#     employees,
+#     weekly_reports,
+#     hourstracking,
+#     accomplishments,
+#     workstreams,
+#     load_tables,
+#     get_session_data
+# )
 from utils.db import (
     get_engine,
-    employees,
-    weekly_reports,
-    hourstracking,
-    accomplishments,
-    workstreams,
-    load_tables,
+    get_data,
+    insert_row,
     get_session_data
 )
+
+
 
 from utils.helpers import (
     get_most_recent_monday,
@@ -29,7 +37,7 @@ from utils.helpers import (
 )
 
 # Ensure tables are loaded
-load_tables()
+# load_tables()
 
 # Load cached session data (only fetches DB if cache expired or cleared)
 session_data = get_session_data()
@@ -180,34 +188,31 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                 with get_engine().begin() as conn:
                     weekly_data, hours_data, employee_cache = [], [], {}
                     duplicates_found, inserted_count = [], 0
-            
+                    
                     for _, row in df.iterrows():
                         contractor = normalize_text(row.get("contractorname", ""))
                         if not contractor:
                             continue
-            
+                    
                         if contractor not in employee_cache:
                             employee_cache[contractor] = get_or_create_employee(
-                                conn,
                                 contractor_name=contractor,
                                 vendor=normalize_text(row.get("vendorname", "")),
                                 laborcategory=normalize_text(row.get("laborcategory", ""))
                             )
                         employee_id = employee_cache[contractor]
-            
+                    
                         # --- Duplicate Check ---
-                        existing = conn.execute(
-                            weekly_reports.select().where(
-                                (weekly_reports.c.EmployeeID == employee_id) &
-                                (weekly_reports.c.WeekStartDate == row["weekstartdate"]) &
-                                (weekly_reports.c.WorkProductTitle == normalize_text(row.get("workproducttitle", "")))
-                            )
-                        ).fetchone()
-            
-                        if existing:
+                        existing = get_data("WeeklyReports")
+                        duplicate_check = existing[
+                            (existing["EmployeeID"] == employee_id) &
+                            (existing["WeekStartDate"] == row["weekstartdate"]) &
+                            (existing["WorkProductTitle"] == normalize_text(row.get("workproducttitle", "")))
+                        ]
+                        if not duplicate_check.empty:
                             duplicates_found.append(row.get("workproducttitle"))
                             continue
-            
+                    
                         weekly_data.append({
                             "EmployeeID": employee_id,
                             "WeekStartDate": row["weekstartdate"],
@@ -224,7 +229,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                             "GovtTAName": normalize_text(row.get("govttaname", "")),
                         })
                         inserted_count += 1
-            
+                    
                         if row["hoursworked"] > 0:
                             hours_data.append({
                                 "EmployeeID": employee_id,
@@ -233,11 +238,14 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                                 "HoursWorked": row["hoursworked"],
                                 "LevelOfEffort": row["effortpercentage"],
                             })
-            
-                    if weekly_data:
-                        conn.execute(insert(weekly_reports), weekly_data)
-                    if hours_data:
-                        conn.execute(insert(hourstracking), hours_data)
+                    
+                    # ✅ Use insert_row for database writes
+                    for row in weekly_data:
+                        insert_row("WeeklyReports", row)
+                    
+                    for row in hours_data:
+                        insert_row("HoursTracking", row)
+
             
                 msg = f"Weekly Reports submitted: {inserted_count}."
                 if duplicates_found:
@@ -295,49 +303,59 @@ if st.button("Submit Accomplishments", key="submit_accom"):
                 df = cleaned_accom_df.rename(columns=accomplishments_col_map)
                 duplicates_found, inserted_count = [], 0
 
-                with get_engine().begin() as conn:
-                    employee_cache, workstream_cache = {}, {}
-                    for _, row in df.iterrows():
-                        contractor = normalize_text(row.get("name", ""))
-                        if not contractor:
+                employee_cache, workstream_cache = {}, {}
+                duplicates_found, inserted_count = [], 0
+                
+                # Load cached accomplishments data to check for duplicates
+                existing_accomplishments = get_data("Accomplishments")
+                
+                for _, row in df.iterrows():
+                    contractor = normalize_text(row.get("name", ""))
+                    if not contractor:
+                        continue
+                
+                    # ✅ Cache employee lookup
+                    if contractor not in employee_cache:
+                        employee_cache[contractor] = get_or_create_employee(contractor)
+                    employee_id = employee_cache[contractor]
+                
+                    # ✅ Cache workstream lookup
+                    workstream_name = normalize_text(row.get("workstream_name", ""))
+                    if workstream_name not in workstream_cache:
+                        workstream_cache[workstream_name] = get_or_create_workstream(workstream_name)
+                    workstream_id = workstream_cache[workstream_name]
+                
+                    reporting_week = (
+                        pd.to_datetime(row.get("reporting_week"), errors='coerce').date()
+                        if pd.notnull(row.get("reporting_week")) else None
+                    )
+                
+                    for i in range(1, 6):
+                        text = normalize_text(row.get(f"accomplishment_{i}", ""))
+                        if not text:
                             continue
-                        if contractor not in employee_cache:
-                            employee_cache[contractor] = get_or_create_employee(conn, contractor)
-                        employee_id = employee_cache[contractor]
+                
+                        # ✅ Check for duplicates using cached DataFrame
+                        duplicate_check = existing_accomplishments[
+                            (existing_accomplishments["EmployeeID"] == employee_id) &
+                            (existing_accomplishments["WorkstreamID"] == workstream_id) &
+                            (existing_accomplishments["DateRange"] == reporting_week) &
+                            (existing_accomplishments["Description"].str.lower() == text.lower())
+                        ]
+                
+                        if not duplicate_check.empty:
+                            duplicates_found.append(text)
+                            continue
+                
+                        # ✅ Insert using helper
+                        insert_row("Accomplishments", {
+                            "EmployeeID": employee_id,
+                            "WorkstreamID": workstream_id,
+                            "DateRange": reporting_week,
+                            "Description": text
+                        })
+                        inserted_count += 1
 
-                        workstream_name = normalize_text(row.get("workstream_name", ""))
-                        if workstream_name not in workstream_cache:
-                            workstream_cache[workstream_name] = get_or_create_workstream(conn, workstream_name)
-                        workstream_id = workstream_cache[workstream_name]
-
-                        reporting_week = (
-                            pd.to_datetime(row.get("reporting_week"), errors='coerce').date()
-                            if pd.notnull(row.get("reporting_week")) else None
-                        )
-
-                        for i in range(1, 6):
-                            text = normalize_text(row.get(f"accomplishment_{i}", ""))
-                            if text:
-                                existing = conn.execute(
-                                    accomplishments.select().where(
-                                        (accomplishments.c.EmployeeID == employee_id) &
-                                        (accomplishments.c.WorkstreamID == workstream_id) &
-                                        (accomplishments.c.DateRange == reporting_week) &
-                                        (accomplishments.c.Description == text)
-                                    )
-                                ).fetchone()
-
-                                if existing:
-                                    duplicates_found.append(text)
-                                    continue
-
-                                conn.execute(insert(accomplishments).values(
-                                    EmployeeID=employee_id,
-                                    WorkstreamID=workstream_id,
-                                    DateRange=reporting_week,
-                                    Description=text
-                                ))
-                                inserted_count += 1
 
                 msg = f"Accomplishments submitted: {inserted_count}."
                 if duplicates_found:
