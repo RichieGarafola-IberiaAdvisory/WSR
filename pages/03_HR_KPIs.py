@@ -116,37 +116,57 @@ if st.button("🔄 Refresh HR Data"):
 # Cache the function output for 8 hours
 @st.cache_data(ttl=8 * 3600)
 def load_hr_data():
-    weekly = get_data("WeeklyReports")
-    employees_df = get_data("Employees")
-
-    # Merge tables
-    df = weekly.merge(
-        employees_df[["EmployeeID", "LaborCategory", "Name"]],
-        on="EmployeeID",
-        how="left"
-    )
-
-    # Rename columns
-    df.rename(columns={
-        "WeekStartDate": "Reporting Week",
-        "DateCompleted": "If Completed, Date Completed",
-        "Status": "Work Product Status",
-        "PlannedOrUnplanned": "Planned or Unplanned",
-        "EffortPercentage": "Level of Effort (%)",
-        "ContractorName": "Contractor (Last Name, First Name)",
-        "WorkProductTitle": "Work Product Title",
-        "DivisionCommand": "Division/Command",
-        "GovtTAName": "Govt TA (Last Name, First Name)",
-        "DistinctNFR": "Distinct NFR",
-        "DistinctCAP": "Distinct CAP",
-        "LaborCategory": "Labor Category"
-    }, inplace=True)
-
-    return df
-
+    try:        
+        weekly = get_data("WeeklyReports")
+        employees_df = get_data("Employees")
+    
+        # Merge tables
+        df = weekly.merge(
+            employees_df[["EmployeeID", "LaborCategory", "Name"]],
+            on="EmployeeID",
+            how="left"
+        )
+    
+        # Rename columns
+        df.rename(columns={
+            "WeekStartDate": "Reporting Week",
+            "DateCompleted": "If Completed, Date Completed",
+            "Status": "Work Product Status",
+            "PlannedOrUnplanned": "Planned or Unplanned",
+            "EffortPercentage": "Level of Effort (%)",
+            "ContractorName": "Contractor (Last Name, First Name)",
+            "WorkProductTitle": "Work Product Title",
+            "DivisionCommand": "Division/Command",
+            "GovtTAName": "Govt TA (Last Name, First Name)",
+            "DistinctNFR": "Distinct NFR",
+            "DistinctCAP": "Distinct CAP",
+            "LaborCategory": "Labor Category"
+        }, inplace=True)
+    
+        return df
+    except Exception:
+        return pd.DataFrame()
+        
 df = load_hr_data()
 
+# Handle offline/empty data
+if df.empty:
+    st.warning("⚠️ Database is currently offline or HR data is unavailable.")
+    st.info("Once the database is restored, contractor activity and KPIs will be displayed here.")
+    st.stop()
 
+@st.cache_data(ttl=8 * 3600)
+def get_expected_contractors():
+    try:
+        employees_df = get_data("Employees")
+        if employees_df.empty:
+            return set()
+        return {normalize_text(name) for name in employees_df["Name"].dropna().unique()}
+    except Exception:
+        return set()
+
+expected_contractors = get_expected_contractors()
+    
 ############################
 # --- Data Cleaning ---
 ############################
@@ -273,81 +293,99 @@ st.markdown("## Work Metrics Visualizations")
 row1_col1, row1_col2 = st.columns(2)
 with row1_col1:
     st.subheader("Work Product Status Overview")
-    status_counts = df["Work Product Status"].value_counts()
-    st.plotly_chart(px.pie(
-        names=status_counts.index,
-        values=status_counts.values,
-        title="Work Status Distribution",
-    color_discrete_sequence=px.colors.sequential.Blues
-    ), use_container_width=True)
-
+    try:
+        status_counts = df["Work Product Status"].value_counts()
+        st.plotly_chart(px.pie(
+            names=status_counts.index,
+            values=status_counts.values,
+            title="Work Status Distribution",
+        color_discrete_sequence=px.colors.sequential.Blues
+        ), use_container_width=True)
+    except Exception:
+        st.warning("⚠️ Unable to load 'Work Product Status' chart.")
+        
 with row1_col2:
     st.subheader("Weekly Completion Trend")
-    weekly_completed = (
-        df[df["Work Product Status"] == "Completed"]
-        .groupby(df["Reporting Week"].dt.to_period("W").dt.start_time)
-        .size()
-    )
-    st.line_chart(weekly_completed)
+    try:
+        weekly_completed = (
+            df[df["Work Product Status"] == "Completed"]
+            .groupby(df["Reporting Week"].dt.to_period("W").dt.start_time)
+            .size()
+        )
+        st.line_chart(weekly_completed)
+    except Exception:
+        st.warning("⚠️ Unable to load 'Weekly Completion Trend Chart.")
 
     # --- Row 2: Quadrant 3 + Quadrant 4 ---
 row2_col1, row2_col2 = st.columns(2)
 with row2_col1:
     st.subheader("Level of Effort by Division")
-    division_effort = (
-        df.groupby("Division/Command")["Level of Effort (%)"]
-        .sum()
-        .sort_values(ascending=True)
-        .reset_index()
-    )
-    st.plotly_chart(px.bar(
-        division_effort,
-        x="Level of Effort (%)",
-        y="Division/Command",
-        orientation="h",
-        title="Total Effort (%) per Division",
-    color_discrete_sequence=px.colors.sequential.Blues
-    ), use_container_width=True)
+    try:
+        division_effort = (
+            df.groupby("Division/Command")["Level of Effort (%)"]
+            .sum()
+            .sort_values(ascending=True)
+            .reset_index()
+        )
+        st.plotly_chart(px.bar(
+            division_effort,
+            x="Level of Effort (%)",
+            y="Division/Command",
+            orientation="h",
+            title="Total Effort (%) per Division",
+        color_discrete_sequence=px.colors.sequential.Blues
+        ), use_container_width=True)
+    except Exception:
+        st.warning("⚠️ Unable to load Level of Effort by Division chart.")
 
 with row2_col2:
     st.subheader("Unplanned Hours by Division")
-    unplanned_by_div = (
-        df[df["Planned or Unplanned"] == "unplanned"]
-        .groupby("Division/Command")["Hours"]
-        .sum()
-        .sort_values(ascending=True)    # Horizontal bar
-        .reset_index()
-    )
-    st.plotly_chart(px.bar(
-        unplanned_by_div,
-        x="Hours",
-        y="Division/Command",
-        orientation="h",
-        title="Unplanned Hours per Division",
-    color_discrete_sequence=px.colors.sequential.Blues
-    ), use_container_width=True)
+    try:
+        unplanned_by_div = (
+            df[df["Planned or Unplanned"] == "unplanned"]
+            .groupby("Division/Command")["Hours"]
+            .sum()
+            .sort_values(ascending=True)    # Horizontal bar
+            .reset_index()
+        )
+        st.plotly_chart(px.bar(
+            unplanned_by_div,
+            x="Hours",
+            y="Division/Command",
+            orientation="h",
+            title="Unplanned Hours per Division",
+        color_discrete_sequence=px.colors.sequential.Blues
+        ), use_container_width=True)
+    except Exception:
+        st.warning("⚠️ Unable to load 'Unplanned Hours by Division' chart.")
 
 # --- Row 3: Top Work Products + Labor Category Distribution ---
 row3_col1, row3_col2 = st.columns(2)
 with row3_col1:
     st.subheader("Top Work Products by Total Hours")
-    top_titles = (
-        df.groupby("Work Product Title", as_index=False)
-        .agg(Total_Hours=("Hours", "sum"), Frequency=("Hours", "count"))
-        .sort_values(by="Total_Hours", ascending=False)
-        .head(5)
-    )
-    st.table(top_titles)
+    try:
+        top_titles = (
+            df.groupby("Work Product Title", as_index=False)
+            .agg(Total_Hours=("Hours", "sum"), Frequency=("Hours", "count"))
+            .sort_values(by="Total_Hours", ascending=False)
+            .head(5)
+        )
+        st.table(top_titles)
+    except Exception:
+        st.warning("⚠️ Unable to load 'Top Work Products by Totoal Hours' chart.")
 
 with row3_col2:
     st.subheader("Labor Category Distribution")
-    labor_dist = df["Labor Category"].value_counts()
-    st.plotly_chart(px.pie(
-        names=labor_dist.index,
-        values=labor_dist.values,
-        title="Labor Categories",
-    color_discrete_sequence=px.colors.sequential.Blues
-    ), use_container_width=True)
+    try:
+        labor_dist = df["Labor Category"].value_counts()
+        st.plotly_chart(px.pie(
+            names=labor_dist.index,
+            values=labor_dist.values,
+            title="Labor Categories",
+        color_discrete_sequence=px.colors.sequential.Blues
+        ), use_container_width=True)
+    except Exception:
+        st.warning("⚠️ Unable to load 'Labor Category Distibution' chart.")
 
 # --- Heatmap: Hours by Contractor and Month ---
 st.subheader("Monthly Hours Heatmap by Contractor")
@@ -395,22 +433,26 @@ def load_heatmap_data():
         .rename(columns={"Name": "Contractor"})
     )
 
-
-heatmap_df = load_heatmap_data().pivot(index="Contractor", columns="Month", values="Hours").fillna(0)
-
-st.dataframe(
-    heatmap_df.style.background_gradient(axis=1, cmap="Blues"),
-    use_container_width=True
-)
-
+try:
+    heatmap_df = load_heatmap_data().pivot(index="Contractor", columns="Month", values="Hours").fillna(0)
+    
+    st.dataframe(
+        heatmap_df.style.background_gradient(axis=1, cmap="Blues"),
+        use_container_width=True
+    )
+except Exception:
+    st.warning("⚠️ Unable to load heatmap data.")
+    
 # --- Contractor Coverage Check ---
 st.subheader("Contractors with Zero Submissions")
-if missing_contractors:
-    st.warning(f"{len(missing_contractors)} contractors have no submissions.")
-    st.write(missing_contractors)
-else:
-    st.success("All expected contractors have submitted.")
-
+try:
+    if missing_contractors:
+        st.warning(f"{len(missing_contractors)} contractors have no submissions.")
+        st.write(missing_contractors)
+    else:
+        st.success("All expected contractors have submitted.")
+except Exception:
+    st.warning("⚠️ Unable to calculate contractor coverage.")
 
 
 #######################################
