@@ -4,8 +4,7 @@ from sqlalchemy import select, join, func, text  # For database connections
 import pandas as pd  # For working with tabular data
 import plotly.express as px  # For generating interactive charts
 
-
-from utils.db import get_engine, employees, weekly_reports, get_data, load_all_data
+from utils.db import get_engine, get_data, load_all_data
 from utils.helpers import normalize_text
 
 
