@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import pandas as pd
 from sqlalchemy import create_engine, MetaData
 import urllib
 
@@ -8,21 +9,14 @@ _engine = None
 _metadata = None
 _tables = {}
 
-# Lazy-loaded table references
-employees = None
-workstreams = None
-weekly_reports = None
-accomplishments = None
-hourstracking = None
-
+# Cached DataFrame store
+_cached_data = {}
 
 def get_engine():
     """Create and cache SQLAlchemy engine for Azure SQL or SQLite fallback during tests."""
     global _engine
     if _engine is None:
-        # Detect test environment
         if os.getenv("PYTEST_CURRENT_TEST") or os.getenv("DATABASE_URL", "").startswith("sqlite"):
-            # Use in-memory SQLite for testing
             _engine = create_engine("sqlite:///:memory:", future=True)
             return _engine
 
@@ -30,7 +24,6 @@ def get_engine():
         if not connection_string:
             raise RuntimeError("DATABASE_URL not found")
 
-        # Attempt using Driver 18 first
         try:
             params = urllib.parse.quote_plus(connection_string)
             _engine = create_engine(
@@ -41,7 +34,6 @@ def get_engine():
                 pool_pre_ping=True
             )
         except Exception:
-            # Fallback to Driver 17
             connection_string = connection_string.replace("ODBC Driver 18", "ODBC Driver 17")
             params = urllib.parse.quote_plus(connection_string)
             _engine = create_engine(
@@ -51,8 +43,8 @@ def get_engine():
                 pool_recycle=1800,
                 pool_pre_ping=True
             )
-
     return _engine
+
 
 def get_metadata():
     """Reflect and cache database metadata."""
@@ -62,13 +54,7 @@ def get_metadata():
         _metadata.reflect(
             bind=get_engine(),
             schema="dbo",
-            only=[
-                "Employees",
-                "Workstreams",
-                "WeeklyReports",
-                "Accomplishments",
-                "HoursTracking"
-            ]
+            only=["Employees", "Workstreams", "WeeklyReports", "Accomplishments", "HoursTracking"]
         )
     return _metadata
 
@@ -89,17 +75,35 @@ def get_table(name):
     raise KeyError(f"Table '{name}' not found. Found tables: {list(meta.tables.keys())}")
 
 
-def load_tables():
-    """Lazy-load global table references."""
-    global employees, workstreams, weekly_reports, accomplishments, hourstracking
+@st.cache_data(ttl=8*3600)
+def load_all_data():
+    """Load all tables into cached DataFrames (1 query each, once per hour)."""
+    engine = get_engine()
+    data = {}
+    
+    tables = ["Employees", "Workstreams", "WeeklyReports", "Accomplishments", "HoursTracking"]
+    
+    with engine.connect() as conn:
+        for table in tables:
+            data[table] = pd.read_sql(f"SELECT * FROM {table}", conn)
+    
+    return data
 
-    if employees is None:
-        employees = get_table("Employees")
-    if workstreams is None:
-        workstreams = get_table("Workstreams")
-    if weekly_reports is None:
-        weekly_reports = get_table("WeeklyReports")
-    if accomplishments is None:
-        accomplishments = get_table("Accomplishments")
-    if hourstracking is None:
-        hourstracking = get_table("HoursTracking")
+
+def get_data(table_name: str) -> pd.DataFrame:
+    """Access cached DataFrame for a specific table."""
+    data = load_all_data()
+    if table_name not in data:
+        raise KeyError(f"Data for table '{table_name}' not found.")
+    return data[table_name]
+
+
+def insert_row(table_name: str, row_data: dict):
+    """Insert data (write only, keeps connection short-lived)."""
+    engine = get_engine()
+    df = pd.DataFrame([row_data])
+    with engine.begin() as conn:
+        df.to_sql(table_name, conn, if_exists="append", index=False)
+    
+    # Clear cached data so next call refreshes
+    load_all_data.clear()
