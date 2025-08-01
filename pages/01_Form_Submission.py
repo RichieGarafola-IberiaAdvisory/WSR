@@ -41,7 +41,11 @@ from utils.helpers import (
 
 # Load cached session data (only fetches DB if cache expired or cleared)
 try:
-    session_data = get_session_data()
+    # session_data = get_session_data()
+    from utils.db import load_table
+    employees_df = load_table("Employees")
+    weekly_reports_df = load_table("WeeklyReports")
+
 except Exception:
     st.error("⚠️ Database is currently offline. You can still fill out the forms, "
              "but submissions will not be saved until the database is restored.")
