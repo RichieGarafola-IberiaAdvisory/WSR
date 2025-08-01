@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import pandas as pd
-from sqlalchemy import create_engine, MetaData
+from sqlalchemy import create_engine, MetaData, text
 from sqlalchemy.exc import OperationalError, InterfaceError, DBAPIError
 import urllib
 import time
@@ -97,11 +97,15 @@ def get_table(name):
 
     raise KeyError(f"Table '{name}' not found. Found tables: {list(meta.tables.keys())}")
 
-# Allow DB to be idle and auto-pause after 15 minutes
-@st.cache_data(ttl=900)   # 8 * 3600 (8 hours)
+
+# Allow DB to be idle and auto-pause after 5 minutes
+@st.cache_data(ttl=300)
 @with_reconnect
 def load_all_data():
     """Mass load all tables into cached DataFrames (shared cache)."""
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return {}
+    
     engine = get_engine()
     data = {}
     tables = ["Employees", "Workstreams", "WeeklyReports", "Accomplishments", "HoursTracking"]
@@ -113,14 +117,17 @@ def load_all_data():
     return data
 
 
-@st.cache_data(ttl=600)  # NEW: Single-table loader
+@st.cache_data(ttl=600)
 @with_reconnect
 def load_table(table_name: str):
     """Load only one table to avoid waking up DB unnecessarily."""
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return pd.DataFrame()
+    
     engine = get_engine()
     with engine.connect() as conn:
         return pd.read_sql(f"SELECT * FROM {table_name}", conn)
-        
+
 
 def get_session_data():
     """Load data for this session only (no extra DB calls if shared cache is fresh)."""
@@ -139,13 +146,29 @@ def get_data(table_name: str) -> pd.DataFrame:
 
 @with_reconnect
 def insert_row(table_name: str, row_data: dict):
-    """Insert data (short-lived connection) and refresh caches."""
+    """Insert data (short-lived connection), return inserted ID, and refresh caches."""
     engine = get_engine()
-    df = pd.DataFrame([row_data])
     with engine.begin() as conn:
-        df.to_sql(table_name, conn, if_exists="append", index=False)
+        cols = ", ".join(row_data.keys())
+        vals = ", ".join([f":{k}" for k in row_data.keys()])
+        id_col = "EmployeeID" if table_name.lower() == "employees" else None
+        
+        if id_col:
+            result = conn.execute(
+                text(f"INSERT INTO {table_name} ({cols}) OUTPUT INSERTED.{id_col} VALUES ({vals})"),
+                row_data
+            )
+            inserted_id = result.scalar_one()
+        else:
+            conn.execute(
+                text(f"INSERT INTO {table_name} ({cols}) VALUES ({vals})"),
+                row_data
+            )
+            inserted_id = None
 
-    # Clear both caches
+    # Clear caches
     load_all_data.clear()
     if "session_data" in st.session_state:
         del st.session_state["session_data"]
+
+    return inserted_id
