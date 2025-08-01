@@ -1,98 +1,102 @@
--- Drop tables in order of dependencies to avoid FK violations
-DROP TABLE IF EXISTS HoursTracking;
-DROP TABLE IF EXISTS WeeklyReports;
-DROP TABLE IF EXISTS Accomplishments;
-DROP TABLE IF EXISTS Workstreams;
-DROP TABLE IF EXISTS Employees;
+-- Drop tables in correct dependency order
+IF OBJECT_ID('HoursTracking', 'U') IS NOT NULL DROP TABLE HoursTracking;
+IF OBJECT_ID('WeeklyReports', 'U') IS NOT NULL DROP TABLE WeeklyReports;
+IF OBJECT_ID('Accomplishments', 'U') IS NOT NULL DROP TABLE Accomplishments;
+IF OBJECT_ID('Workstreams', 'U') IS NOT NULL DROP TABLE Workstreams;
+IF OBJECT_ID('Employees', 'U') IS NOT NULL DROP TABLE Employees;
 
 -- ========================
 -- Employees Table
 -- ========================
 CREATE TABLE Employees (
-    EmployeeID SERIAL PRIMARY KEY,
-
-    Name VARCHAR(255) NOT NULL,
-    LaborCategory VARCHAR(255) DEFAULT 'Unknown Role',
-    VendorName VARCHAR(255) DEFAULT 'Unknown Vendor',
-
-    PublicID TEXT UNIQUE,     -- e.g., GARAFOLA-RICHIE-042
-    UniqueKey TEXT UNIQUE     -- SHA-256 hash of Name + VendorName
+    EmployeeID INT IDENTITY(1,1) PRIMARY KEY,
+    Name NVARCHAR(255) NOT NULL,
+    LaborCategory NVARCHAR(255) DEFAULT 'Unknown Role',
+    VendorName NVARCHAR(255) DEFAULT 'Unknown Vendor',
+    PublicID NVARCHAR(255) UNIQUE,
+    UniqueKey NVARCHAR(255) UNIQUE,
+    CreatedAt DATETIME DEFAULT GETDATE(),
+    EnteredBy NVARCHAR(255) DEFAULT 'system'
 );
 
 -- ========================
 -- Workstreams Table
 -- ========================
 CREATE TABLE Workstreams (
-    WorkstreamID SERIAL PRIMARY KEY,
-    Name VARCHAR(255) NOT NULL,
-    Description TEXT
+    WorkstreamID INT IDENTITY(1,1) PRIMARY KEY,
+    Name NVARCHAR(255) NOT NULL,
+    Description NVARCHAR(MAX),
+    CreatedAt DATETIME DEFAULT GETDATE(),
+    EnteredBy NVARCHAR(255) DEFAULT 'system'
 );
 
 -- ========================
 -- Accomplishments Table
 -- ========================
 CREATE TABLE Accomplishments (
-    AccomplishmentID SERIAL PRIMARY KEY,
+    AccomplishmentID INT IDENTITY(1,1) PRIMARY KEY,
+    EmployeeID INT NOT NULL,
+    WorkstreamID INT NULL,
+    DateRange NVARCHAR(50),
+    Description NVARCHAR(MAX) NOT NULL,
+    -- Computed hash column for uniqueness
+    DescriptionHash AS CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', Description), 2) PERSISTED,
+    CreatedAt DATETIME DEFAULT GETDATE(),
+    EnteredBy NVARCHAR(255) DEFAULT 'system',
 
-    EmployeeID INT NOT NULL REFERENCES Employees(EmployeeID) ON DELETE CASCADE,
-    WorkstreamID INT REFERENCES Workstreams(WorkstreamID) ON DELETE SET NULL,
-
-    DateRange VARCHAR(50),         -- e.g., "07/15/2025"
-    Description TEXT NOT NULL,
-
-    -- Audit
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    entered_by TEXT,
+    CONSTRAINT FK_Accomplishments_Employees FOREIGN KEY (EmployeeID)
+        REFERENCES Employees(EmployeeID) ON DELETE CASCADE,
+    CONSTRAINT FK_Accomplishments_Workstreams FOREIGN KEY (WorkstreamID)
+        REFERENCES Workstreams(WorkstreamID) ON DELETE SET NULL
 );
+
+-- Add Unique Index to Prevent Duplicates (safe hash-based)
+CREATE UNIQUE INDEX UQ_Accomplishments
+ON Accomplishments(EmployeeID, WorkstreamID, DateRange, DescriptionHash);
 
 -- ========================
 -- Weekly Reports Table
 -- ========================
 CREATE TABLE WeeklyReports (
-    ReportID SERIAL PRIMARY KEY,
-
-    EmployeeID INT NOT NULL REFERENCES Employees(EmployeeID) ON DELETE CASCADE,
-
+    ReportID INT IDENTITY(1,1) PRIMARY KEY,
+    EmployeeID INT NOT NULL,
     WeekStartDate DATE NOT NULL,
-    DivisionCommand VARCHAR(255),
-    WorkProductTitle VARCHAR(255) NOT NULL,
-    ContributionDescription TEXT,
-
-    Status VARCHAR(100),
-    PlannedOrUnplanned VARCHAR(50),
+    DivisionCommand NVARCHAR(255),
+    WorkProductTitle NVARCHAR(255) NOT NULL,
+    ContributionDescription NVARCHAR(MAX),
+    Status NVARCHAR(100),
+    PlannedOrUnplanned NVARCHAR(50),
     DateCompleted DATE,
-
-    DistinctNFR VARCHAR(255),
-    DistinctCAP VARCHAR(255),
+    DistinctNFR NVARCHAR(255),
+    DistinctCAP NVARCHAR(255),
     EffortPercentage DECIMAL(5,2),
+    ContractorName NVARCHAR(255),
+    GovtTAName NVARCHAR(255),
+    CreatedAt DATETIME DEFAULT GETDATE(),
+    EnteredBy NVARCHAR(255) DEFAULT 'system',
 
-    ContractorName VARCHAR(255),
-    GovtTAName VARCHAR(255)
-
-    -- Audit
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP,
-    source_file TEXT,
-    entered_by TEXT,
+    CONSTRAINT FK_WeeklyReports_Employees FOREIGN KEY (EmployeeID)
+        REFERENCES Employees(EmployeeID) ON DELETE CASCADE
 );
+
 
 -- ========================
 -- Hours Tracking Table
 -- ========================
 CREATE TABLE HoursTracking (
-    EntryID SERIAL PRIMARY KEY,
-    EmployeeID INT REFERENCES Employees(EmployeeID),
-    WorkstreamID INT REFERENCES Workstreams(WorkstreamID),
+    EntryID INT IDENTITY(1,1) PRIMARY KEY,
+    EmployeeID INT,
+    WorkstreamID INT,
     ReportingWeek DATE,
     HoursWorked DECIMAL(5,2),
     LevelOfEffort DECIMAL(5,2),
+    CreatedAt DATETIME DEFAULT GETDATE(),
+    EnteredBy NVARCHAR(255) DEFAULT 'system',
 
-    -- Audit
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    source_file TEXT,
-    entered_by TEXT,
-);
-
+    CONSTRAINT FK_HoursTracking_Employees FOREIGN KEY (EmployeeID)
+        REFERENCES Employees(EmployeeID),
+    CONSTRAINT FK_HoursTracking_Workstreams FOREIGN KEY (WorkstreamID)
+        REFERENCES Workstreams(WorkstreamID));
 
 
 ---
@@ -149,7 +153,7 @@ DateRange: Textual week indicator (e.g., 07/22/2025).
 Description: One of up to 5 accomplishments submitted per week.
 
 Why?
-Enables qualitative performance tracking, separate from quantitative reports. Fully normalized and allows multiple entries per contractor per week.
+Enables qualitative performance tracking, separate from quantitative reports. Fully normalized and allows multiple entries per contractor per week. Prevents duplicate rows (same employee, week, workstream, and description)
 
 4. WeeklyReports
 Purpose: Captures structured, recurring activity and performance metrics for each employee, typically submitted weekly.
