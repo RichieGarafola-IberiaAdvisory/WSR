@@ -11,12 +11,12 @@ def get_most_recent_monday():
     return today - timedelta(days=today.weekday())
 
 
-def get_or_create_employee(contractor_name, vendor=None, laborcategory=None):
+def get_or_create_employee(conn=None, contractor_name=None, vendor=None, laborcategory=None):
     """
     Retrieves an existing employee from the Employees table or inserts a new one if not found.
-    Uses a deterministic SHA-256 UniqueKey to avoid duplicates.
+    Supports optional conn parameter for testing.
     """
-    contractor_name = contractor_name.strip()
+    contractor_name = (contractor_name or "").strip()
     if not contractor_name:
         return None
 
@@ -24,61 +24,78 @@ def get_or_create_employee(contractor_name, vendor=None, laborcategory=None):
     laborcategory = laborcategory or "Unknown LCAT"
     uniquekey = generate_employee_key(contractor_name, vendor)
 
-    existing = get_data("Employees")
-    match = existing[existing["UniqueKey"] == uniquekey]
+    if conn:  # Test mode
+        existing = conn.execute(
+            text("SELECT EmployeeID FROM Employees WHERE UniqueKey = :key"),
+            {"key": uniquekey}
+        ).mappings().fetchone()
+        if existing:
+            return int(existing["EmployeeID"])
 
-    if not match.empty:
-        return int(match.iloc[0]["EmployeeID"])
+        # Insert new employee
+        result = conn.execute(
+            text("INSERT INTO Employees (Name, VendorName, LaborCategory, UniqueKey) "
+                 "OUTPUT INSERTED.EmployeeID "
+                 "VALUES (:name, :vendor, :lcat, :key)"),
+            {"name": contractor_name, "vendor": vendor, "lcat": laborcategory, "key": uniquekey}
+        )
+        employee_id = result.scalar_one()
+        conn.execute(
+            text("UPDATE Employees SET PublicID = :pid WHERE EmployeeID = :eid"),
+            {"pid": generate_public_id(contractor_name, employee_id), "eid": employee_id}
+        )
+        return employee_id
+    else:  # Production
+        existing = get_data("Employees")
+        match = existing[existing["UniqueKey"] == uniquekey]
+        if not match.empty:
+            return int(match.iloc[0]["EmployeeID"])
 
-    # Insert new employee
-    employee_id = insert_row("Employees", {
-        "Name": contractor_name,
-        "VendorName": vendor,
-        "LaborCategory": laborcategory,
-        "UniqueKey": uniquekey
-    })
-
-    # Generate and store public ID
-    publicid = generate_public_id(contractor_name, employee_id)
-    insert_row("Employees", {
-        "EmployeeID": employee_id,
-        "PublicID": publicid
-    })
-
-    return employee_id
+        employee_id = insert_row("Employees", {
+            "Name": contractor_name,
+            "VendorName": vendor,
+            "LaborCategory": laborcategory,
+            "UniqueKey": uniquekey
+        })
+        publicid = generate_public_id(contractor_name, employee_id)
+        insert_row("Employees", {
+            "EmployeeID": employee_id,
+            "PublicID": publicid
+        })
+        return employee_id
 
 
-def get_or_create_workstream(workstream_name):
+
+def get_or_create_workstream(conn=None, workstream_name=None):
     """
     Retrieves an existing workstream or inserts a new one if not found.
-    Performs a case-insensitive match to prevent duplicates.
+    Supports optional conn parameter for testing.
     """
-    workstream_name = workstream_name.strip()
+    workstream_name = (workstream_name or "").strip()
     if not workstream_name:
         return None
 
     normalized_name = normalize_text(workstream_name)
 
-    existing = get_data("Workstreams")
-    match = existing[existing["Name"].str.lower() == normalized_name.lower()]
+    if conn:  # Test mode
+        existing = conn.execute(
+            text("SELECT WorkstreamID FROM Workstreams WHERE LOWER(Name) = :name"),
+            {"name": normalized_name.lower()}
+        ).mappings().fetchone()
+        if existing:
+            return int(existing["WorkstreamID"])
 
-    if not match.empty:
-        return int(match.iloc[0]["WorkstreamID"])
-
-    return insert_row("Workstreams", {"Name": normalized_name})
-
-
-def clean_dataframe_dates_hours(df, date_cols, numeric_cols):
-    """Cleans and coerces date and numeric columns for database compatibility."""
-    for col in date_cols:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
-
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-    return df
+        result = conn.execute(
+            text("INSERT INTO Workstreams (Name) OUTPUT INSERTED.WorkstreamID VALUES (:name)"),
+            {"name": normalized_name}
+        )
+        return result.scalar_one()
+    else:  # Production
+        existing = get_data("Workstreams")
+        match = existing[existing["Name"].str.lower() == normalized_name.lower()]
+        if not match.empty:
+            return int(match.iloc[0]["WorkstreamID"])
+        return insert_row("Workstreams", {"Name": normalized_name})
 
 
 def normalize_text(value: str) -> str:
