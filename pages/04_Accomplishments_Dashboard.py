@@ -32,23 +32,38 @@ if st.button("🔄 Refresh Accomplishments Data"):
 # ----------------------------
 # Load Data (Cached)
 # ----------------------------
-@st.cache_data(ttl=300) # 8 * 3600 (8 hrs)
+@st.cache_data(ttl=600) # 8 * 3600 (8 hrs)
 def load_accomplishments():
-    # accomplishments_df = get_data("Accomplishments")
-    # employees_df = get_data("Employees")
-    # workstreams_df = get_data("Workstreams")
-    
     from utils.db import load_table
     accomplishments_df = load_table("Accomplishments")
     employees_df = load_table("Employees")
     workstreams_df = load_table("Workstreams")
-    
+
+    # Handle different possible column names for Reporting Week
+    if "DateRange" in accomplishments_df.columns:
+        accomplishments_df.rename(columns={"DateRange": "Reporting Week"}, inplace=True)
+    elif "weekstartdate" in accomplishments_df.columns:
+        accomplishments_df.rename(columns={"weekstartdate": "Reporting Week"}, inplace=True)
+    elif "WeekStartDate" in accomplishments_df.columns:
+        accomplishments_df.rename(columns={"WeekStartDate": "Reporting Week"}, inplace=True)
+    elif "WeekEnding" in accomplishments_df.columns:
+        accomplishments_df.rename(columns={"WeekEnding": "Reporting Week"}, inplace=True)
+    else:
+        accomplishments_df["Reporting Week"] = pd.NaT
+
     df = (
         accomplishments_df
-        .merge(employees_df[["EmployeeID", "Name", "VendorName", "LaborCategory"]], on="EmployeeID", how="left")
-        .merge(workstreams_df[["WorkstreamID", "Name"]], on="WorkstreamID", how="left")
+        .merge(
+            employees_df[["EmployeeID", "Name", "VendorName", "LaborCategory"]],
+            on="EmployeeID",
+            how="left"
+        )
+        .merge(
+            workstreams_df[["WorkstreamID", "Name"]],
+            on="WorkstreamID",
+            how="left"
+        )
         .rename(columns={
-            "DateRange": "Reporting Week",
             "Description": "Accomplishment",
             "Name_x": "Contractor",
             "VendorName": "Vendor",
