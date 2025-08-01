@@ -3,6 +3,7 @@ import streamlit as st  # Used for building the web app
 from sqlalchemy import select, join, func, text  # For database connections
 import pandas as pd  # For working with tabular data
 import plotly.express as px  # For generating interactive charts
+from datetime import date
 
 from utils.db import get_engine, get_data, load_all_data
 from utils.helpers import normalize_text
@@ -197,12 +198,24 @@ st.sidebar.header("Filter HR Data")
 # Date range filter
 min_date = df["Reporting Week"].min()
 max_date = df["Reporting Week"].max()
+
+# Fallbacks if no valid dates found
+if pd.isna(min_date):
+    min_date = date.today()
+else:
+    min_date = min_date.date()
+
+if pd.isna(max_date):
+    max_date = date.today()
+else:
+    max_date = max_date.date()
+
+# Use safe defaults
 start_date, end_date = st.sidebar.date_input(
     "Select Date Range",
     [min_date, max_date],
-    min_value=min_date,
-    max_value=max_date
 )
+
 
 # Division filter
 divisions = sorted(df["Division/Command"].dropna().unique())
