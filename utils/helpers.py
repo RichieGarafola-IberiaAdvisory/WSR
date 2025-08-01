@@ -105,6 +105,21 @@ def normalize_text(value: str) -> str:
         return ""
     return re.sub(r"\s+", " ", value.strip()).title()
 
+def clean_dataframe_dates_hours(df, date_cols=None, numeric_cols=None):
+    """Clean DataFrame date and numeric columns."""
+    df = df.copy()
+    
+    if date_cols:
+        for col in date_cols:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors="coerce")
+    
+    if numeric_cols:
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+    
+    return df
 
 def generate_employee_key(name: str, vendor: str) -> str:
     """Creates a SHA-256 hash key to uniquely identify an employee."""
