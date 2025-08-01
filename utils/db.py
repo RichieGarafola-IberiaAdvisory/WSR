@@ -172,3 +172,14 @@ def insert_row(table_name: str, row_data: dict):
         del st.session_state["session_data"]
 
     return inserted_id
+
+
+def update_row(table_name: str, row_id: int, data: dict):
+    """
+    Updates a row in the specified table by its primary key.
+    """
+    from sqlalchemy import text
+    with get_engine().begin() as conn:
+        set_clause = ", ".join([f"{col} = :{col}" for col in data.keys()])
+        query = text(f"UPDATE {table_name} SET {set_clause} WHERE {table_name[:-1]}ID = :id")
+        conn.execute(query, {"id": row_id, **data})
