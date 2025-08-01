@@ -35,7 +35,8 @@ from utils.helpers import (
     get_or_create_workstream,
     clean_dataframe_dates_hours,
     normalize_text,
-    insert_weekly_report
+    insert_weekly_report,
+    insert_accomplishment
 )
 
 # Ensure tables are loaded
@@ -263,7 +264,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                                     "LevelOfEffort": row["effortpercentage"],
                                 })
                         
-                        # ✅ Use insert_row for database writes
+                        # Use insert_row for database writes
                         for row in weekly_data:
                             insert_row("WeeklyReports", {
                                 **row,
@@ -349,12 +350,12 @@ if st.button("Submit Accomplishments", key="submit_accom"):
                         if not contractor:
                             continue
                     
-                        # ✅ Cache employee lookup
+                        # Cache employee lookup
                         if contractor not in employee_cache:
                             employee_cache[contractor] = get_or_create_employee(contractor)
                         employee_id = employee_cache[contractor]
                     
-                        # ✅ Cache workstream lookup
+                        # Cache workstream lookup
                         workstream_name = normalize_text(row.get("workstream_name", ""))
                         if workstream_name not in workstream_cache:
                             workstream_cache[workstream_name] = get_or_create_workstream(workstream_name)
@@ -370,7 +371,7 @@ if st.button("Submit Accomplishments", key="submit_accom"):
                             if not text:
                                 continue
                     
-                            # ✅ Check for duplicates using cached DataFrame
+                            # Check for duplicates using cached DataFrame
                             duplicate_check = existing_accomplishments[
                                 (existing_accomplishments["EmployeeID"] == employee_id) &
                                 (existing_accomplishments["WorkstreamID"] == workstream_id) &
@@ -382,15 +383,15 @@ if st.button("Submit Accomplishments", key="submit_accom"):
                                 duplicates_found.append(text)
                                 continue
                     
-                            # ✅ Insert using helper
-                            insert_row("Accomplishments", {
+                            # Insert using helper
+                            insert_accomplishment({
                                 "EmployeeID": employee_id,
                                 "WorkstreamID": workstream_id,
+                                "WorkstreamName": workstream_name,
                                 "DateRange": reporting_week,
-                                "Description": text,
-                                "CreatedAt": datetime.utcnow(),
-                                "EnteredBy": "anonymous"
-                            })
+                                "Description": text
+                            }, entered_by="anonymous")
+
                             inserted_count += 1
     
     
