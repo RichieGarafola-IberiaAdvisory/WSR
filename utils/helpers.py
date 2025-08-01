@@ -188,9 +188,10 @@ def get_or_create_workstream(conn, workstream_name, workstreams_table=None):
 
     normalized_name = normalize_text(workstream_name)
 
+    # Use correct column names with SQLAlchemy table reflection
     ws = conn.execute(
-        select(workstreams_table.c.workstreamid).where(
-            func.lower(workstreams_table.c.name) == normalized_name.lower()
+        select(workstreams_table.c.WorkstreamID).where(
+            func.lower(workstreams_table.c.Name) == normalized_name.lower()
         )
     ).scalar_one_or_none()
 
@@ -199,11 +200,12 @@ def get_or_create_workstream(conn, workstream_name, workstreams_table=None):
 
     result = conn.execute(
         workstreams_table.insert()
-        .values(name=normalized_name)
-        .returning(workstreams_table.c.workstreamid)
+        .values(Name=normalized_name)
+        .returning(workstreams_table.c.WorkstreamID)
     )
 
     return result.scalar_one()
+
 
 
 def clean_dataframe_dates_hours(df, date_cols, numeric_cols):
