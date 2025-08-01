@@ -97,8 +97,8 @@ def get_table(name):
 
     raise KeyError(f"Table '{name}' not found. Found tables: {list(meta.tables.keys())}")
 
-# Allow DB to be idle and auto-pause after 5 minutes
-@st.cache_data(ttl=300)   # 8 * 3600 (8 hours)
+# Allow DB to be idle and auto-pause after 15 minutes
+@st.cache_data(ttl=900)   # 8 * 3600 (8 hours)
 @with_reconnect
 def load_all_data():
     """Mass load all tables into cached DataFrames (shared cache)."""
