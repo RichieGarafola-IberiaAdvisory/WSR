@@ -112,12 +112,16 @@ if st.button("🔄 Refresh HR Data"):
 # # Load the data
 # df = load_hr_data()
 
-# Cache the function output for 8 hours
-@st.cache_data(ttl=8 * 3600)
+# Cache the function output for 5 minutes 
+@st.cache_data(ttl=300) # 8 * 3600 8 hours
 def load_hr_data():
     try:        
-        weekly = get_data("WeeklyReports")
-        employees_df = get_data("Employees")
+        # weekly = get_data("WeeklyReports")
+        # employees_df = get_data("Employees")
+        from utils.db import load_table
+        weekly = load_table("WeeklyReports")
+        employees_df = load_table("Employees")
+
     
         # Merge tables
         df = weekly.merge(
