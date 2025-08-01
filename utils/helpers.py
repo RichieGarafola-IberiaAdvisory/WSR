@@ -3,7 +3,6 @@ import re
 from datetime import date, timedelta
 import hashlib
 from sqlalchemy.sql import text
-from utils.helpers import normalize_text
 from utils.db import get_data, insert_row
 
 
