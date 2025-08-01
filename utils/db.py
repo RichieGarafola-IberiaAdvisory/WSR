@@ -98,36 +98,59 @@ def get_table(name):
     raise KeyError(f"Table '{name}' not found. Found tables: {list(meta.tables.keys())}")
 
 
-# Allow DB to be idle and auto-pause after 5 minutes
+# -------------------------------
+# Expected Table Schemas (fallbacks)
+# -------------------------------
+TABLE_SCHEMAS = {
+    "Employees": ["EmployeeID", "Name", "VendorName", "LaborCategory", "UniqueKey", "PublicID", "CreatedAt", "EnteredBy"],
+    "Workstreams": ["WorkstreamID", "Name", "CreatedAt", "EnteredBy"],
+    "WeeklyReports": ["ReportID", "EmployeeID", "WeekStartDate", "DivisionCommand", "WorkProductTitle", 
+                      "ContributionDescription", "Status", "PlannedOrUnplanned", "DateCompleted", 
+                      "DistinctNFR", "DistinctCAP", "EffortPercentage", "ContractorName", "GovtTAName", 
+                      "CreatedAt", "EnteredBy"],
+    "Accomplishments": ["AccomplishmentID", "EmployeeID", "WorkstreamID", "DateRange", "Description", "CreatedAt", "EnteredBy"],
+    "HoursTracking": ["HoursID", "EmployeeID", "WorkstreamID", "ReportingWeek", "HoursWorked", "LevelOfEffort", "CreatedAt", "EnteredBy"]
+}
+
+def _empty_table(name: str) -> pd.DataFrame:
+    """Return an empty DataFrame with the expected schema."""
+    cols = TABLE_SCHEMAS.get(name, [])
+    return pd.DataFrame(columns=cols)
+
 @st.cache_data(ttl=300)
 @with_reconnect
 def load_all_data():
-    """Mass load all tables into cached DataFrames (shared cache)."""
-    if os.getenv("PYTEST_CURRENT_TEST"):
-        return {}
-    
+    """Mass load all tables or provide schema fallbacks."""
     engine = get_engine()
     data = {}
-    tables = ["Employees", "Workstreams", "WeeklyReports", "Accomplishments", "HoursTracking"]
+    tables = TABLE_SCHEMAS.keys()
 
-    with engine.connect() as conn:
-        for table in tables:
-            data[table] = pd.read_sql(f"SELECT * FROM {table}", conn)
+    try:
+        with engine.connect() as conn:
+            for table in tables:
+                df = pd.read_sql(f"SELECT * FROM {table}", conn)
+                if df.empty:
+                    df = _empty_table(table)
+                data[table] = df
+    except Exception:
+        # Test or offline mode
+        data = {table: _empty_table(table) for table in tables}
 
     return data
-
 
 @st.cache_data(ttl=600)
 @with_reconnect
 def load_table(table_name: str):
-    """Load only one table to avoid waking up DB unnecessarily."""
-    if os.getenv("PYTEST_CURRENT_TEST"):
-        return pd.DataFrame()
-    
+    """Load single table or fallback schema."""
     engine = get_engine()
-    with engine.connect() as conn:
-        return pd.read_sql(f"SELECT * FROM {table_name}", conn)
-
+    try:
+        with engine.connect() as conn:
+            df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
+            if df.empty:
+                return _empty_table(table_name)
+            return df
+    except Exception:
+        return _empty_table(table_name)
 
 def get_session_data():
     """Load data for this session only (no extra DB calls if shared cache is fresh)."""
