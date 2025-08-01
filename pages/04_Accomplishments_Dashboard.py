@@ -32,12 +32,17 @@ if st.button("🔄 Refresh Accomplishments Data"):
 # ----------------------------
 # Load Data (Cached)
 # ----------------------------
-@st.cache_data(ttl=8 * 3600)
+@st.cache_data(ttl=300) # 8 * 3600 (8 hrs)
 def load_accomplishments():
-    accomplishments_df = get_data("Accomplishments")
-    employees_df = get_data("Employees")
-    workstreams_df = get_data("Workstreams")
-
+    # accomplishments_df = get_data("Accomplishments")
+    # employees_df = get_data("Employees")
+    # workstreams_df = get_data("Workstreams")
+    
+    from utils.db import load_table
+    accomplishments_df = load_table("Accomplishments")
+    employees_df = load_table("Employees")
+    workstreams_df = load_table("Workstreams")
+    
     df = (
         accomplishments_df
         .merge(employees_df[["EmployeeID", "Name", "VendorName", "LaborCategory"]], on="EmployeeID", how="left")
