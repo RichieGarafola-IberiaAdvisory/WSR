@@ -6,6 +6,7 @@ import pandas as pd  # Used for working with tabular data
 from sqlalchemy import insert  # For database operations
 from sqlalchemy.exc import OperationalError
 import time
+import sys, os
 from datetime import datetime  # For working with dates
 
 # Import shared modules
@@ -19,6 +20,8 @@ from datetime import datetime  # For working with dates
 #     load_tables,
 #     get_session_data
 # )
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.db import (
     get_engine,
     get_data,
