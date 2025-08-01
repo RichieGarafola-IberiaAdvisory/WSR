@@ -112,27 +112,33 @@ if st.button("🔄 Refresh HR Data"):
 # # Load the data
 # df = load_hr_data()
 
-# Cache the function output for 5 minutes 
-@st.cache_data(ttl=300) # 8 * 3600 8 hours
+# Cache the function output for 10 minutes 
+@st.cache_data(ttl=600) # 8 * 3600 8 hours
 def load_hr_data():
     try:        
-        # weekly = get_data("WeeklyReports")
-        # employees_df = get_data("Employees")
         from utils.db import load_table
         weekly = load_table("WeeklyReports")
         employees_df = load_table("Employees")
 
-    
+        # Handle different possible column names for Reporting Week
+        if "weekstartdate" in weekly.columns:
+            weekly.rename(columns={"weekstartdate": "Reporting Week"}, inplace=True)
+        elif "WeekStartDate" in weekly.columns:
+            weekly.rename(columns={"WeekStartDate": "Reporting Week"}, inplace=True)
+        elif "WeekEnding" in weekly.columns:
+            weekly.rename(columns={"WeekEnding": "Reporting Week"}, inplace=True)
+        else:
+            weekly["Reporting Week"] = pd.NaT
+
         # Merge tables
         df = weekly.merge(
             employees_df[["EmployeeID", "LaborCategory", "Name"]],
             on="EmployeeID",
             how="left"
         )
-    
-        # Rename columns
+
+        # Rename remaining columns
         df.rename(columns={
-            "WeekStartDate": "Reporting Week",
             "DateCompleted": "If Completed, Date Completed",
             "Status": "Work Product Status",
             "PlannedOrUnplanned": "Planned or Unplanned",
@@ -145,10 +151,11 @@ def load_hr_data():
             "DistinctCAP": "Distinct CAP",
             "LaborCategory": "Labor Category"
         }, inplace=True)
-    
+
         return df
     except Exception:
         return pd.DataFrame()
+
         
 df = load_hr_data()
 
