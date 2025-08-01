@@ -3,6 +3,7 @@ import re
 from datetime import date, timedelta
 import hashlib
 from sqlalchemy.sql import text
+from utils.helpers import normalize_text
 from utils.db import get_data, insert_row
 
 
@@ -78,25 +79,30 @@ def get_or_create_workstream(conn=None, workstream_name=None):
 
     normalized_name = normalize_text(workstream_name)
 
-    if conn:  # Test mode
-        existing = conn.execute(
+    if conn:  # Test mode or direct DB connection
+        # Check if the workstream already exists
+        existing_id = conn.execute(
             text("SELECT WorkstreamID FROM Workstreams WHERE LOWER(Name) = :name"),
             {"name": normalized_name.lower()}
-        ).mappings().fetchone()
-        if existing:
-            return int(existing["WorkstreamID"])
+        ).scalar_one_or_none()
 
-        result = conn.execute(
-            text("INSERT INTO Workstreams (Name) OUTPUT INSERTED.WorkstreamID VALUES (:name)"),
+        if existing_id is not None:
+            return int(existing_id)
+
+        # Insert a new workstream and return its ID
+        new_id = conn.execute(
+            text("INSERT INTO Workstreams (Name) VALUES (:name) RETURNING WorkstreamID"),
             {"name": normalized_name}
-        )
-        return result.scalar_one()
-    else:  # Production
-        existing = get_data("Workstreams")
-        match = existing[existing["Name"].str.lower() == normalized_name.lower()]
-        if not match.empty:
-            return int(match.iloc[0]["WorkstreamID"])
-        return insert_row("Workstreams", {"Name": normalized_name})
+        ).scalar_one()
+        return int(new_id)
+
+    # Production mode (no direct connection provided)
+    existing = get_data("Workstreams")
+    match = existing[existing["Name"].str.lower() == normalized_name.lower()]
+    if not match.empty:
+        return int(match.iloc[0]["WorkstreamID"])
+
+    return insert_row("Workstreams", {"Name": normalized_name})
 
 
 def normalize_text(value: str) -> str:
