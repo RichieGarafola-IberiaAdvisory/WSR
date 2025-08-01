@@ -11,6 +11,7 @@ This test suite validates the core components of the WSR (Weekly Status Reports)
 -    **Query functionality**
 
 The tests are structured using pytest and integrated with GitHub Actions for continuous integration (CI). This ensures every code change is automatically tested before deployment, minimizing risk and maintaining system stability.
+
 ---
 
 ## `tests/test_db.py`
