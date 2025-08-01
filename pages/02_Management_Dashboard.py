@@ -77,11 +77,15 @@ if st.button("🔄 Refresh Data"):
 
 # df = load_weekly_data()
 
-@st.cache_data(ttl=8 * 3600)
+@st.cache_data(ttl=300) # 8 * 3600 (8hrs)
 def get_weekly_df():
     try:
-        df = get_data("WeeklyReports")  # Pulls from cached data
-        employees_df = get_data("Employees")
+        # df = get_data("WeeklyReports")  # Pulls from cached data
+        # employees_df = get_data("Employees")
+        from utils.db import load_table
+        df = load_table("WeeklyReports")
+        employees_df = load_table("Employees")
+
     
         # Join weekly reports with employees for enriched data
         df = df.merge(
