@@ -32,15 +32,7 @@ st.image("images/Iberia-Advisory.png", width=250)
 
 # Load global tables
 load_tables()
-
-# Safely initialize session data (important for tests/CI runs)
-try:
-    if "username" not in st.session_state:
-        st.session_state["username"] = "anonymous"
-except Exception:
-    # In CI/CD pytest runs, Streamlit session state may not exist
-    st.session_state = {"username": "anonymous"}
-    
+   
 ####################################
 # --- Page Title and Description ---
 ####################################
@@ -104,10 +96,6 @@ weekly_default.at[0, "Reporting Week (MM/DD/YYYY)"] = most_recent_monday
 weekly_default.at[0, "If Completed (YYYY-MM-DD)"] = pd.NaT
 
 # Display an editable table (like an excel spreadsheet)
-# If employees table is unavailable (like during tests), skip DB-dependent logic
-if employees is None or weekly_reports is None:
-    st.warning("⚠️ Database tables not loaded. Submissions are disabled in this mode.")
-
 weekly_df = st.data_editor(
     weekly_default,
     column_config={
@@ -276,7 +264,7 @@ if st.button("Submit Accomplishments"):
                             description=text,
                             # Audit Fields
                             created_at=datetime.utcnow(),
-                            entered_by=st.session_state["username"]
+                            entered_by=st.session_state.get("username", "anonymous")
                         ))
 
 
