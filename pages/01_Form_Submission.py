@@ -210,13 +210,18 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                             if not contractor:
                                 continue
                         
-                            if contractor not in employee_cache:
-                                employee_cache[contractor] = get_or_create_employee(
-                                    contractor_name=contractor,
+                            contractor_norm = normalize_text(row.get("contractorname", ""))
+                            if not contractor_norm:
+                                continue
+                            
+                            if contractor_norm not in employee_cache:
+                                employee_cache[contractor_norm] = get_or_create_employee(
+                                    contractor_name=contractor_norm,
                                     vendor=normalize_text(row.get("vendorname", "")),
                                     laborcategory=normalize_text(row.get("laborcategory", ""))
                                 )
-                            employee_id = employee_cache[contractor]
+                            employee_id = employee_cache[contractor_norm]
+
                         
                             # --- Duplicate Check ---
                            
@@ -257,11 +262,19 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                         
                         # ✅ Use insert_row for database writes
                         for row in weekly_data:
-                            insert_row("WeeklyReports", row)
-                        
+                            insert_row("WeeklyReports", {
+                                **row,
+                                "CreatedAt": datetime.utcnow(),
+                                "EnteredBy": "anonymous"
+                            })
+
                         for row in hours_data:
-                            insert_row("HoursTracking", row)
-    
+                            insert_row("HoursTracking", {
+                                **row,
+                                "CreatedAt": datetime.utcnow(),
+                                "EnteredBy": "anonymous"
+                            })
+                                
                 
                     msg = f"Weekly Reports submitted: {inserted_count}."
                     if duplicates_found:
@@ -275,7 +288,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                 session_data = get_session_data()  # refresh cached session data
                 st.session_state["weekly_df"] = pd.DataFrame([{col: "" for col in weekly_columns}])  # Clear form
             except Exception as e:
-                st.error(f"Error inserting weekly reports: {e}")
+                st.error(f"Database insert failed: {type(e).__name__} - {e}")
 
 
 
@@ -371,7 +384,9 @@ if st.button("Submit Accomplishments", key="submit_accom"):
                                 "EmployeeID": employee_id,
                                 "WorkstreamID": workstream_id,
                                 "DateRange": reporting_week,
-                                "Description": text
+                                "Description": text,
+                                "CreatedAt": datetime.utcnow(),
+                                "EnteredBy": "anonymous"
                             })
                             inserted_count += 1
     
@@ -384,7 +399,8 @@ if st.button("Submit Accomplishments", key="submit_accom"):
                 with_retry(insert_accomplishments)
                 st.session_state["accom_df"] = pd.DataFrame([{col: "" for col in accom_columns}])  # Clear form
             except Exception as e:
-                st.error(f"Error inserting accomplishments: {e}")
+                st.error(f"Database insert failed: {type(e).__name__} - {e}")
+
 
 
 ########################################
