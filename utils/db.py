@@ -113,6 +113,15 @@ def load_all_data():
     return data
 
 
+@st.cache_data(ttl=600)  # NEW: Single-table loader
+@with_reconnect
+def load_table(table_name: str):
+    """Load only one table to avoid waking up DB unnecessarily."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        return pd.read_sql(f"SELECT * FROM {table_name}", conn)
+        
+
 def get_session_data():
     """Load data for this session only (no extra DB calls if shared cache is fresh)."""
     if "session_data" not in st.session_state:
