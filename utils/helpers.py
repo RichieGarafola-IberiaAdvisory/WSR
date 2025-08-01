@@ -165,15 +165,35 @@ def insert_weekly_report(data: dict, entered_by=DEFAULT_ENTERED_BY):
     })
 
 def insert_accomplishment(data: dict, entered_by=DEFAULT_ENTERED_BY):
-    """Insert an Accomplishment with auditing and auto-workstream creation."""
+    """Insert an Accomplishment with auditing and auto-workstream creation or fallback."""
+
+    # Try provided WorkstreamID first
     workstream_id = data.get("WorkstreamID")
     workstream_name = data.get("WorkstreamName")
 
-    if not workstream_id and workstream_name:
-        # Ensure workstream exists
-        ws_id = get_or_create_workstream(workstream_name=workstream_name, entered_by=entered_by)
-        data["WorkstreamID"] = ws_id
-        data.pop("WorkstreamName", None)  # Remove name to avoid invalid column
+    if not workstream_id:
+        if workstream_name:
+            # Auto-create or fetch workstream by name
+            ws_id = get_or_create_workstream(workstream_name=workstream_name, entered_by=entered_by)
+            data["WorkstreamID"] = ws_id
+        else:
+            # Use default "Unassigned" if no name or ID provided
+            existing = get_data("Workstreams")
+            default_ws = existing[existing["Name"].str.lower() == "unassigned"]
+            if not default_ws.empty:
+                data["WorkstreamID"] = int(default_ws.iloc[0]["WorkstreamID"])
+            else:
+                # Fallback: create "Unassigned" if missing
+                new_ws_id = insert_row("Workstreams", {
+                    "Name": "Unassigned",
+                    "Description": "Default placeholder for uncategorized accomplishments",
+                    "CreatedAt": datetime.utcnow(),
+                    "EnteredBy": entered_by
+                })
+                data["WorkstreamID"] = new_ws_id
+
+    # Remove unused key to avoid invalid insert
+    data.pop("WorkstreamName", None)
 
     return insert_row("Accomplishments", {
         **data,
