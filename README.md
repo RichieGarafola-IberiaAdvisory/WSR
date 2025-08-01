@@ -52,6 +52,15 @@ Professional visual presentation aligned with Iberia Advisory’s identity.
 
 ---
 
+### Testing Coverage
+
+- Unit tests for database inserts, updates, and helper functions  
+- Smoke tests to ensure each Streamlit page loads without errors  
+- Pytest configuration runs automatically in CI/CD pipeline  
+
+
+---
+
 ## Setup Instructions
 
 ### 1. Clone the Repository
@@ -89,6 +98,8 @@ DATABASE_URL="Driver={ODBC Driver 18 for SQL Server};Server=...;Database=Iberia_
 ```bash
 streamlit run app.py
 ```
+> **Note:** The `DATABASE_URL` supports deployment on **Azure Government Cloud**.  
+> Ensure you have installed the correct ODBC Driver (`18` or fallback `17`) and updated firewall rules for secure connections.
 
 ---
 
@@ -110,6 +121,8 @@ streamlit run app.py
 ├── images/
 │   └── Iberia-Advisory.png    # Branding
 ├── requirements.txt
+├── schema/
+│   └── create_tables.sql       # Database schema
 └── README.md
 ```
 
@@ -147,6 +160,23 @@ streamlit run app.py
 - Mobile-friendly layout
 - Integrated reporting PDFs for leadership
 - Unit test coverage for form submission and KPIs
+
+---
+
+## Changelog
+
+- **v2.0 (Aug 2025):**  
+  - Added auditing fields (`CreatedAt`, `EnteredBy`) to all tables  
+  - Implemented robust `get_or_create` helpers for Employees and Workstreams  
+  - Added contractor non-reporting checks and monthly hours heatmap  
+  - Enhanced caching with `@st.cache_data` and `@st.cache_resource`  
+  - CI/CD pipeline integrated with Streamlit Cloud for staging and production  
+  - Improved test coverage for KPIs and dashboards  
+
+- **v1.0 (Jul 2025):**  
+  - Initial release with weekly report form submission  
+  - Basic management and HR dashboards  
+  - Core database schema with relational integrity
 
 ---
 
