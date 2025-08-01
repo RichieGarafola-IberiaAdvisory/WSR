@@ -92,8 +92,8 @@ def get_weekly_df():
         elif "WeekEnding" in df.columns:
             df.rename(columns={"WeekEnding": "Reporting Week"}, inplace=True)
         else:
-            # If none exist, create an empty Reporting Week column
-            df["Reporting Week"] = pd.NaT
+            df["Reporting Week"] = pd.NaT  # Fallback column
+
 
         # Join with employees
         df = df.merge(
@@ -150,10 +150,12 @@ if missing_cols:
 df["Reporting Week"] = pd.to_datetime(df["Reporting Week"], errors='coerce')
 
 # Convert level of effort to numeric (strip % if present)
-df["Level of Effort (%)"] = pd.to_numeric(
-    df["Level of Effort (%)"].astype(str).str.replace('%', '', regex=False),
-    errors='coerce'
-).fillna(0)
+df["Level of Effort (%)"] = (
+    pd.to_numeric(
+        df["Level of Effort (%)"].astype(str).str.replace('%', '', regex=False),
+        errors='coerce'
+    ).fillna(0)
+)
 
 # Calculate hours worked assuming 40 hours is 100% effort
 df["Hours"] = (df["Level of Effort (%)"] / 100 * 40).round(2)
@@ -164,7 +166,17 @@ df["Hours"] = (df["Level of Effort (%)"] / 100 * 40).round(2)
 st.sidebar.header("Filter Data")
 
 # Create dropdowns/multiselects based on available data
-week_options = df["Reporting Week"].dropna().dt.strftime("%Y-%m-%d").sort_values().unique()
+if df["Reporting Week"].notna().any():
+    week_options = (
+        df["Reporting Week"]
+        .dropna()
+        .dt.strftime("%Y-%m-%d")
+        .sort_values()
+        .unique()
+    )
+else:
+    week_options = []
+
 vendors = df["Vendor Name"].dropna().sort_values().unique()
 contractors = df["Contractor (Last Name, First Name)"].dropna().sort_values().unique()
 
@@ -183,10 +195,10 @@ selected_contractors = st.sidebar.multiselect("Contractor", contractors, default
 
 # Reset button
 if st.sidebar.button("Reset Filters"):
-    st.session_state.selected_weeks = []
-    st.session_state.selected_vendors = []
-    st.session_state.selected_contractors = []
+    for key in ["selected_weeks", "selected_vendors", "selected_contractors"]:
+        st.session_state[key] = []
     st.experimental_rerun()
+
 
 # Apply filters
 filters = pd.Series(True, index=df.index)
@@ -226,28 +238,28 @@ if df.empty:
 ########################
 # Treemap
 st.subheader("Effort Breakdown: Vendor → Division → Contractor → Work Product")
-try:
-    fig = px.treemap(
-        df,
-        path=[
-            "Vendor Name",
-            "Division/Command",
-            "Contractor (Last Name, First Name)",
-            "Work Product Title"
-        ],
-        values="Level of Effort (%)",
-        hover_data=[
-            "Work Product Status",
-            "Planned or Unplanned",
-            "Govt TA (Last Name, First Name)"
-        ],
-        # color="Level of Effort (%)",  # Color intensity based on effort
-        # color_continuous_scale="Blues"  # Apply blue color scheme
-    )
-    # fig.update_traces(root_color="lightblue")  # Optional: root background
-    st.plotly_chart(fig, use_container_width=True)
-except ValueError as ve:
-    st.error(f"Treemap failed to render: {ve}")
+if df.empty:
+    st.warning("No records available for visualization.")
+else:
+    try:
+        fig = px.treemap(
+            df,
+            path=[
+                "Vendor Name",
+                "Division/Command",
+                "Contractor (Last Name, First Name)",
+                "Work Product Title"
+            ],
+            values="Level of Effort (%)",
+            hover_data=[
+                "Work Product Status",
+                "Planned or Unplanned",
+                "Govt TA (Last Name, First Name)"
+            ],
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except ValueError as ve:
+        st.error(f"Treemap failed to render: {ve}")
 
 
 #######################################
