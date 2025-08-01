@@ -94,6 +94,7 @@ def get_or_create_employee(conn=None, contractor_name=None, vendor=None, laborca
         return employee_id
 
     existing = get_data("Employees")
+    existing["UniqueKey"] = existing["UniqueKey"].str.strip()
     match = existing[existing["UniqueKey"] == uniquekey]
     if not match.empty:
         return int(match.iloc[0]["EmployeeID"])
@@ -121,9 +122,10 @@ def get_or_create_workstream(conn=None, workstream_name=None, entered_by=DEFAULT
 
     if conn:
         existing_id = conn.execute(
-            text("SELECT WorkstreamID FROM Workstreams WHERE LOWER(Name) = :name"),
+            text("SELECT WorkstreamID FROM Workstreams WHERE LOWER(LTRIM(RTRIM(Name))) = :name"),
             {"name": workstream_norm.lower()}
         ).scalar_one_or_none()
+
         if existing_id:
             return int(existing_id)
 
@@ -140,7 +142,7 @@ def get_or_create_workstream(conn=None, workstream_name=None, entered_by=DEFAULT
         return int(new_id)
 
     existing = get_data("Workstreams")
-    match = existing[existing["Name"].str.lower() == workstream_norm.lower()]
+    match = existing[existing["Name"].str.strip().str.lower() == workstream_norm.lower()]
     if not match.empty:
         return int(match.iloc[0]["WorkstreamID"])
 
@@ -163,12 +165,22 @@ def insert_weekly_report(data: dict, entered_by=DEFAULT_ENTERED_BY):
     })
 
 def insert_accomplishment(data: dict, entered_by=DEFAULT_ENTERED_BY):
-    """Insert an Accomplishment with auditing."""
+    """Insert an Accomplishment with auditing and auto-workstream creation."""
+    workstream_id = data.get("WorkstreamID")
+    workstream_name = data.get("WorkstreamName")
+
+    if not workstream_id and workstream_name:
+        # Ensure workstream exists
+        ws_id = get_or_create_workstream(workstream_name=workstream_name, entered_by=entered_by)
+        data["WorkstreamID"] = ws_id
+        data.pop("WorkstreamName", None)  # Remove name to avoid invalid column
+
     return insert_row("Accomplishments", {
         **data,
         "CreatedAt": datetime.utcnow(),
         "EnteredBy": entered_by
     })
+
 
 def insert_hours_tracking(data: dict, entered_by=DEFAULT_ENTERED_BY):
     """Insert Hours Tracking with auditing."""
