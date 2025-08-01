@@ -77,40 +77,48 @@ if st.button("🔄 Refresh Data"):
 
 # df = load_weekly_data()
 
-@st.cache_data(ttl=300) # 8 * 3600 (8hrs)
+@st.cache_data(ttl=600) # 8 * 3600 (8hrs)
 def get_weekly_df():
     try:
-        # df = get_data("WeeklyReports")  # Pulls from cached data
-        # employees_df = get_data("Employees")
         from utils.db import load_table
         df = load_table("WeeklyReports")
         employees_df = load_table("Employees")
 
-    
-        # Join weekly reports with employees for enriched data
+        # Handle different column names for Reporting Week
+        if "weekstartdate" in df.columns:
+            df.rename(columns={"weekstartdate": "Reporting Week"}, inplace=True)
+        elif "WeekStartDate" in df.columns:
+            df.rename(columns={"WeekStartDate": "Reporting Week"}, inplace=True)
+        elif "WeekEnding" in df.columns:
+            df.rename(columns={"WeekEnding": "Reporting Week"}, inplace=True)
+        else:
+            # If none exist, create an empty Reporting Week column
+            df["Reporting Week"] = pd.NaT
+
+        # Join with employees
         df = df.merge(
             employees_df,
             how="left",
             left_on="EmployeeID",
             right_on="EmployeeID"
         )
-    
-        # Rename columns to match your expected schema
+
+        # Standardize other columns
         df.rename(columns={
             "VendorName": "Vendor Name",
             "DivisionCommand": "Division/Command",
             "WorkProductTitle": "Work Product Title",
             "EffortPercentage": "Level of Effort (%)",
-            "WeekStartDate": "Reporting Week",
             "ContractorName": "Contractor (Last Name, First Name)",
             "GovtTAName": "Govt TA (Last Name, First Name)",
             "Status": "Work Product Status",
             "PlannedOrUnplanned": "Planned or Unplanned"
         }, inplace=True)
-    
+
         return df
     except Exception:
-        return pd.DataFrame()  # Empty DataFrame if DB is offline
+        return pd.DataFrame()
+
 
 df = get_weekly_df()
 
