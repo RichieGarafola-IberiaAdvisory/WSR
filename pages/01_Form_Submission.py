@@ -26,14 +26,13 @@ from utils.db import (
     get_session_data
 )
 
-
-
 from utils.helpers import (
     get_most_recent_monday,
     get_or_create_employee,
     get_or_create_workstream,
     clean_dataframe_dates_hours,
-    normalize_text
+    normalize_text,
+    insert_weekly_report
 )
 
 # Ensure tables are loaded
@@ -41,7 +40,7 @@ from utils.helpers import (
 
 # Load cached session data (only fetches DB if cache expired or cleared)
 try:
-    # session_data = get_session_data()
+    session_data = get_session_data()
     from utils.db import load_table
     employees_df = load_table("Employees")
     weekly_reports_df = load_table("WeeklyReports")
@@ -135,7 +134,7 @@ accom_columns = list(accomplishments_col_map.keys())
 
 # Get most recent Monday for pre-populating the form
 most_recent_monday = get_most_recent_monday()
-
+    
 ################################
 # --- Weekly Reports Section ---
 ################################
@@ -205,6 +204,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                         weekly_data, hours_data, employee_cache = [], [], {}
                         duplicates_found, inserted_count = [], 0
                         
+                        existing = get_data("WeeklyReports")
                         for _, row in df.iterrows():
                             contractor = normalize_text(row.get("contractorname", ""))
                             if not contractor:
@@ -219,7 +219,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                             employee_id = employee_cache[contractor]
                         
                             # --- Duplicate Check ---
-                            existing = get_data("WeeklyReports")
+                           
                             duplicate_check = existing[
                                 (existing["EmployeeID"] == employee_id) &
                                 (existing["WeekStartDate"] == row["weekstartdate"]) &
@@ -394,11 +394,9 @@ if st.button("Submit Accomplishments", key="submit_accom"):
 def submit_form(name, vendor, labor_category, week_ending):
     """Helper for tests to simulate a form submission."""
     from utils import helpers
-
     if not name.strip() or not vendor or not labor_category or not week_ending:
         return False
 
-    # Validate date
     import datetime
     try:
         if isinstance(week_ending, str):
@@ -410,7 +408,11 @@ def submit_form(name, vendor, labor_category, week_ending):
     if not emp_id:
         return False
 
-    return helpers.insert_weekly_report({"EmployeeID": emp_id})
+    return helpers.insert_weekly_report({
+        "EmployeeID": emp_id,
+        "WeekStartDate": week_ending
+    })
+
 
             
 #######################        
