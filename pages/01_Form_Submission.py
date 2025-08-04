@@ -103,6 +103,18 @@ def validate_accomplishments(df):
     Ensures each contractor has at least 5 accomplishments total for each week.
     Returns a list of contractors/weeks that fail validation.
     """
+    # Normalize column names to lowercase
+    df = df.rename(columns=str.lower)
+
+    # Ensure all required columns exist
+    required_cols = {"contractorname", "weekstartdate"} | {
+        f"accomplishment{i}" for i in range(1, 6)
+    }
+    missing_cols = required_cols - set(df.columns)
+    if missing_cols:
+        st.error(f"Missing required columns: {', '.join(missing_cols)}")
+        return pd.DataFrame()
+
     grouped = (
         df.groupby(["contractorname", "weekstartdate"])
         .apply(lambda g: sum(
@@ -117,6 +129,7 @@ def validate_accomplishments(df):
     return invalid
 
 
+
 if st.button("Submit Weekly Reports", key="submit_weekly"):
     if session_data is None:
         st.warning("⚠️ Database is offline. Please try again later.")
@@ -125,12 +138,16 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
         if cleaned_df.empty:
             st.warning("Please fill at least one row before submitting.")
         else:
-            invalid = validate_accomplishments(cleaned_df)
+            # 🔑 Normalize column names for validation
+            lower_cleaned = cleaned_df.rename(columns=str.lower)
+
+            invalid = validate_accomplishments(lower_cleaned)
             if not invalid.empty:
                 st.error(
                     "🚨 Submission blocked: "
                     + "; ".join(
-                        f"{row['contractorname']} (Week {row['weekstartdate']}) has only {row['total_accomplishments']} accomplishments"
+                        f"{row['contractorname']} (Week {row['weekstartdate']}) "
+                        f"has only {row['total_accomplishments']} accomplishments"
                         for _, row in invalid.iterrows()
                     )
                     + ". Each contractor must have 5 total accomplishments."
@@ -138,12 +155,21 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
             else:
                 try:
                     def insert_weekly():
-                        df = cleaned_df.rename(columns=weekly_report_col_map)
+                        # Filter only columns that exist in both DataFrame and mapping
+                        valid_cols = [col for col in cleaned_df.columns if col in weekly_report_col_map]
+                        df = cleaned_df[valid_cols].rename(columns=weekly_report_col_map)
+                    
+                        # Ensure all required mapped columns exist even if missing
+                        for mapped_col in weekly_report_col_map.values():
+                            if mapped_col not in df.columns:
+                                df[mapped_col] = None
+                    
                         df = clean_dataframe_dates_hours(
                             df,
                             date_cols=["weekstartdate", "datecompleted"],
                             numeric_cols=["hoursworked"]
                         )
+
                         df["effortpercentage"] = (df["hoursworked"] / 40) * 100
 
                         with get_engine().begin() as conn:
@@ -169,7 +195,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                                     )
                                 workstream_id = workstream_cache[workstream_name]
 
-                                # Combine all accomplishments across rows for ContributionDescription
+                                # Combine accomplishments
                                 all_accomplishments = []
                                 for _, row in group.iterrows():
                                     for i in range(1, 6):
@@ -179,7 +205,6 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
 
                                 contribution_description = "; ".join(all_accomplishments)
                                 
-                                # Process each row in the group
                                 for _, row in group.iterrows():
                                     duplicate_check = existing[
                                         (existing["EmployeeID"] == employee_id) &
@@ -247,7 +272,6 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                     st.session_state["weekly_df"] = pd.DataFrame([{col: "" for col in weekly_columns}])
                 except Exception as e:
                     st.error(f"Database insert failed: {type(e).__name__} - {e}")
-
 
 
 ########################################
