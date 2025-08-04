@@ -83,7 +83,53 @@ weekly_df = st.data_editor(
     disabled=disabled
 )
 
+st.caption("ℹ️ Tip: Each contractor can submit multiple work products per week, "
+           "but must have exactly 5 accomplishments total. "
+           "The table below will highlight incomplete or excessive entries.")
+
+def highlight_rows(row):
+    mapped = row.rename(index=weekly_report_col_map).rename(index=str.lower)
+    total_accomplishments = sum(
+        pd.notna(mapped.get(f"accomplishment{i}", None)) and mapped.get(f"accomplishment{i}") != ""
+        for i in range(1, 6)
+    )
+    
+    # Green = complete, Yellow = incomplete, Red = exceeds
+    if total_accomplishments == 5:
+        return ['background-color: #d4edda'] * len(row)
+    elif total_accomplishments > 5:
+        return ['background-color: #f8d7da'] * len(row)
+    else:
+        return ['background-color: #fff3cd'] * len(row)
+
+styled_df = weekly_df.style.apply(highlight_rows, axis=1)
+st.dataframe(styled_df, use_container_width=True)
+
+###############################
+# Live Accomplishment Counter
+###############################
+def count_accomplishments(df):
+    mapped = df.rename(columns=weekly_report_col_map).rename(columns=str.lower)
+    grouped = (
+        mapped.groupby(["contractorname", "weekstartdate"])[[f"accomplishment{i}" for i in range(1, 6)]]
+        .apply(lambda g: g.notna().sum().sum())
+    )
+    return grouped
+
+if not weekly_df.empty:
+    counts = count_accomplishments(weekly_df)
+    for (contractor, week), total in counts.items():
+        if total < 5:
+            st.warning(f"⚠{contractor} ({week}) has only {total}/5 accomplishments.")
+        elif total > 5:
+            st.error(f"{contractor} ({week}) exceeds 5 accomplishments with {total}.")
+        else:
+            st.info(f"{contractor} ({week}) has exactly 5 accomplishments.")
+
+
+########################
 # --- Retry Helper ---
+########################
 def with_retry(func, max_attempts=3, delay=2):
     for attempt in range(1, max_attempts + 1):
         try:
@@ -120,9 +166,13 @@ def validate_accomplishments(df):
     return grouped[grouped["total_accomplishments"] != 5]
 
 
+# --- Check if all contractors have exactly 5 accomplishments ---
+mapped_for_validation = weekly_df.rename(columns=weekly_report_col_map).rename(columns=str.lower)
+invalid_rows = validate_accomplishments(mapped_for_validation)
+form_ready = invalid_rows.empty and not weekly_df.dropna(how="all").empty
 
 
-if st.button("Submit Weekly Reports", key="submit_weekly"):
+if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_ready):
     if session_data is None:
         st.warning("⚠️ Database is offline. Please try again later.")
     else:
