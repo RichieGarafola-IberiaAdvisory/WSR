@@ -202,7 +202,10 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                         engine = get_engine()
                         weekly_table = Table("WeeklyReports", metadata, autoload_with=engine)
                         hours_table = Table("HoursTracking", metadata, autoload_with=engine)
-                    
+                        
+                        # ✅ Use cleaned_df instead of df
+                        df = cleaned_df.rename(columns=weekly_report_col_map)
+                        
                         with engine.begin() as conn:
                             existing_keys = set(
                                 conn.execute(
