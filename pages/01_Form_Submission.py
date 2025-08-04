@@ -170,8 +170,21 @@ def validate_accomplishments(df):
 # --- Check if all contractors have exactly 5 accomplishments ---
 mapped_for_validation = weekly_df.rename(columns=weekly_report_col_map).rename(columns=str.lower)
 invalid_rows = validate_accomplishments(mapped_for_validation)
-form_ready = invalid_rows.empty and not weekly_df.dropna(how="all").empty
 
+# Disable submit if required fields are missing
+def has_required_fields(df):
+    required = ["Contractor (Last, First Name)", "Vendor Name", "Labor Category", "Workstream"]
+    for field in required:
+        if df[field].isna().all() or (df[field] == "").all():
+            return False
+    return True
+
+# Update form_ready logic
+form_ready = (
+    invalid_rows.empty
+    and not weekly_df.dropna(how="all").empty
+    and has_required_fields(weekly_df)
+)
 
 if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_ready):
     if session_data is None:
@@ -202,7 +215,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                         engine = get_engine()
                         weekly_table = Table("WeeklyReports", metadata, autoload_with=engine)
                         hours_table = Table("HoursTracking", metadata, autoload_with=engine)
-                        
+                    
                         # Use cleaned_df instead of df
                         df = cleaned_df.rename(columns=weekly_report_col_map)
                         df = clean_dataframe_dates_hours(
@@ -211,7 +224,23 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                             numeric_cols=["hoursworked"]
                         )
                         df["effortpercentage"] = (df["hoursworked"] / 40) * 100
-                        
+                    
+                        # Pre-insert validation for required fields
+                        required_fields = ["contractorname", "vendorname", "laborcategory", "workstream_name"]
+                        missing_required = []
+                    
+                        for field in required_fields:
+                            if df[field].isna().any() or (df[field] == "").any():
+                                missing_required.append(field)
+                    
+                        if missing_required:
+                            st.warning(
+                                f"Submission blocked: Missing required fields: "
+                                f"{', '.join(missing_required)}. "
+                                "Please fill all required fields before submitting."
+                            )
+                            return  # Stop insert early
+                    
                         with engine.begin() as conn:
                             existing_keys = set(
                                 conn.execute(
@@ -224,21 +253,35 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                             duplicates_found, inserted_count = [], 0
                     
                             for (contractor, week), group in df.groupby(["contractorname", "weekstartdate"]):
+                                # Cache employee
                                 if contractor not in employee_cache:
-                                    employee_cache[contractor] = get_or_create_employee(
+                                    employee_id = get_or_create_employee(
                                         contractor_name=contractor,
                                         vendor=normalize_text(group["vendorname"].iloc[0]),
                                         laborcategory=normalize_text(group["laborcategory"].iloc[0])
                                     )
-                                employee_id = employee_cache[contractor]
+                                    employee_cache[contractor] = employee_id
+                                else:
+                                    employee_id = employee_cache[contractor]
                     
+                                # Cache workstream
                                 workstream_name = normalize_text(group["workstream_name"].iloc[0])
                                 if workstream_name not in workstream_cache:
-                                    workstream_cache[workstream_name] = get_or_create_workstream(
+                                    workstream_id = get_or_create_workstream(
                                         conn=conn,
                                         workstream_name=workstream_name
                                     )
-                                workstream_id = workstream_cache[workstream_name]
+                                    workstream_cache[workstream_name] = workstream_id
+                                else:
+                                    workstream_id = workstream_cache[workstream_name]
+                    
+                                # Block rows with missing EmployeeID or WorkstreamID
+                                if employee_id is None:
+                                    st.warning(f"🚫 Skipped row: Could not find/create Employee for {contractor}")
+                                    continue
+                                if workstream_id is None:
+                                    st.warning(f"🚫 Skipped row: Missing Workstream for {contractor}")
+                                    continue
                     
                                 accomplishments = [
                                     normalize_text(val)
@@ -249,8 +292,8 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                                 contribution_description = "; ".join(accomplishments)
                     
                                 def safe_val(value):
-                                    return normalize_text(value) if pd.notna(value) else ""
-                                
+                                    return normalize_text(value) if pd.notna(value) else "N/A"
+                    
                                 for _, row in group.iterrows():
                                     key = (
                                         employee_id,
@@ -260,10 +303,10 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                                     if key in existing_keys:
                                         duplicates_found.append(row.get("workproducttitle"))
                                         continue
-                                
+                    
                                     weekly_data.append({
                                         "EmployeeID": employee_id,
-                                        "WorkstreamID": workstream_id, 
+                                        "WorkstreamID": workstream_id,
                                         "WeekStartDate": week,
                                         "DivisionCommand": safe_val(row.get("divisioncommand", "")),
                                         "WorkProductTitle": safe_val(row.get("workproducttitle", "")),
@@ -284,9 +327,8 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                                         "CreatedAt": datetime.now(timezone.utc),
                                         "EnteredBy": "anonymous"
                                     })
-
                                     inserted_count += 1
-                                    
+                    
                                     if pd.notna(row["hoursworked"]) and row["hoursworked"] > 0:
                                         hours_data.append({
                                             "EmployeeID": employee_id,
@@ -297,7 +339,12 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                                             "CreatedAt": datetime.now(timezone.utc),
                                             "EnteredBy": "anonymous"
                                         })
-                                        
+                    
+                            # Stop if nothing valid to insert
+                            if not weekly_data:
+                                st.error("🚫 No valid rows to insert. Please complete all required fields.")
+                                return
+                    
                             if weekly_data:
                                 conn.execute(weekly_table.insert(), weekly_data)
                             if hours_data:
@@ -307,6 +354,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                         if duplicates_found:
                             msg += f" Skipped {len(duplicates_found)} duplicates."
                         st.success(msg)
+
                 
                     # Call the function here
                     with_retry(insert_weekly)
