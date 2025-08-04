@@ -39,6 +39,8 @@ from utils.helpers import (
     insert_accomplishment
 )
 
+from utils.form_helpers import validate_required_fields, insert_batch_accomplishments
+
 # Ensure tables are loaded
 # load_tables()
 
@@ -186,113 +188,47 @@ def with_retry(func, max_attempts=3, delay=2):
 # --- Submit Weekly Reports Button ---
 ######################################
 
-if st.button("Submit Weekly Reports", key="submit_weekly"):
+if st.button("Submit Accomplishments", key="submit_accom"):
     if session_data is None:
         st.warning("⚠️ Database is offline. Please try again later.")
     else:
-        cleaned_df = weekly_df.dropna(how="all")
-        if cleaned_df.empty:
-            st.warning("Please fill at least one row before submitting.")
+        cleaned_accom_df = accom_df.dropna(how="all")
+
+        if cleaned_accom_df.empty:
+            st.warning("Please fill at least one row of accomplishments.")
         else:
-            try:
-                def insert_weekly():
-                    df = cleaned_df.rename(columns=weekly_report_col_map)
-                    df = clean_dataframe_dates_hours(
-                        df,
-                        date_cols=["weekstartdate", "datecompleted"],
-                        numeric_cols=["hoursworked"]
-                    )
-                    df["effortpercentage"] = (df["hoursworked"] / 40) * 100
-                
-                    with get_engine().begin() as conn:
-                        weekly_data, hours_data, employee_cache = [], [], {}
-                        duplicates_found, inserted_count = [], 0
-                        
-                        existing = get_data("WeeklyReports")
-                        for _, row in df.iterrows():
-                            contractor = normalize_text(row.get("contractorname", ""))
-                            if not contractor:
-                                continue
-                        
-                            contractor_norm = normalize_text(row.get("contractorname", ""))
-                            if not contractor_norm:
-                                continue
-                            
-                            if contractor_norm not in employee_cache:
-                                employee_cache[contractor_norm] = get_or_create_employee(
-                                    contractor_name=contractor_norm,
-                                    vendor=normalize_text(row.get("vendorname", "")),
-                                    laborcategory=normalize_text(row.get("laborcategory", ""))
-                                )
-                            employee_id = employee_cache[contractor_norm]
+            # ✅ Check for required fields
+            from utils.form_helpers import validate_required_fields, insert_batch_accomplishments
 
-                        
-                            # --- Duplicate Check ---
-                           
-                            duplicate_check = existing[
-                                (existing["EmployeeID"] == employee_id) &
-                                (existing["WeekStartDate"] == row["weekstartdate"]) &
-                                (existing["WorkProductTitle"] == normalize_text(row.get("workproducttitle", "")))
-                            ]
-                            if not duplicate_check.empty:
-                                duplicates_found.append(row.get("workproducttitle"))
-                                continue
-                        
-                            weekly_data.append({
-                                "EmployeeID": employee_id,
-                                "WeekStartDate": row["weekstartdate"],
-                                "DivisionCommand": normalize_text(row.get("divisioncommand", "")),
-                                "WorkProductTitle": normalize_text(row.get("workproducttitle", "")),
-                                "ContributionDescription": normalize_text(row.get("contributiondescription", "")),
-                                "Status": normalize_text(row.get("status", "")),
-                                "PlannedOrUnplanned": normalize_text(row.get("plannedorunplanned", "")),
-                                "DateCompleted": row["datecompleted"],
-                                "DistinctNFR": normalize_text(row.get("distinctnfr", "")),
-                                "DistinctCAP": normalize_text(row.get("distinctcap", "")),
-                                "EffortPercentage": row["effortpercentage"],
-                                "ContractorName": contractor,
-                                "GovtTAName": normalize_text(row.get("govttaname", "")),
-                            })
-                            inserted_count += 1
-                        
-                            if row["hoursworked"] > 0:
-                                hours_data.append({
-                                    "EmployeeID": employee_id,
-                                    "WorkstreamID": None,
-                                    "ReportingWeek": row["weekstartdate"],
-                                    "HoursWorked": row["hoursworked"],
-                                    "LevelOfEffort": row["effortpercentage"],
-                                })
-                        
-                        # Use insert_row for database writes
-                        for row in weekly_data:
-                            insert_row("WeeklyReports", {
-                                **row,
-                                "CreatedAt": datetime.now(timezone.utc),
-                                "EnteredBy": "anonymous"
-                            })
+            missing_rows = validate_required_fields(
+                cleaned_accom_df,
+                ["Contractor (Last, First Name)", "Workstream"]
+            )
 
-                        for row in hours_data:
-                            insert_row("HoursTracking", {
-                                **row,
-                                "CreatedAt": datetime.now(timezone.utc),
-                                "EnteredBy": "anonymous"
-                            })
-                                
-                
-                    msg = f"Weekly Reports submitted: {inserted_count}."
-                    if duplicates_found:
-                        msg += f" Skipped {len(duplicates_found)} duplicates."
-                    st.success(msg)
-                    session_data = get_session_data()  # refresh cached session data
-    
-    
-                with_retry(insert_weekly)
-                st.success("Weekly Reports submitted successfully!")
-                session_data = get_session_data()  # refresh cached session data
-                st.session_state["weekly_df"] = pd.DataFrame([{col: "" for col in weekly_columns}])  # Clear form
-            except Exception as e:
-                st.error(f"Database insert failed: {type(e).__name__} - {e}")
+            if missing_rows:
+                st.error(
+                    f"⚠️ The following row(s) are missing required fields: "
+                    f"{', '.join(map(str, missing_rows))}. "
+                    "Please review and complete these rows."
+                )
+            else:
+                try:
+                    def insert_accomplishments():
+                        df = cleaned_accom_df.rename(columns=accomplishments_col_map)
+                        existing = get_data("Accomplishments")
+
+                        with get_engine().begin() as conn:
+                            inserted, duplicates = insert_batch_accomplishments(conn, df, existing)
+
+                        msg = f"Accomplishments submitted: {inserted}."
+                        if duplicates:
+                            msg += f" Skipped {len(duplicates)} duplicates."
+                        st.success(msg)
+
+                    with_retry(insert_accomplishments)
+                    st.session_state["accom_df"] = pd.DataFrame([{col: "" for col in accom_columns}])
+                except Exception as e:
+                    st.error(f"Database insert failed: {type(e).__name__} - {e}")
 
 
 
