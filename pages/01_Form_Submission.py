@@ -191,7 +191,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                                         continue
 
                                     weekly_data.append({
-                                        "EmployeeID": employee_id,,
+                                        "EmployeeID": employee_id,
                                         "WorkstreamID": workstream_id, 
                                         "WeekStartDate": week,
                                         "DivisionCommand": normalize_text(row.get("divisioncommand", "")),
