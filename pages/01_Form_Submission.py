@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy.exc import OperationalError
 import sys, os
-from datetime import datetime
+from datetime import datetime, timezone
 from utils.db import (
     get_engine,
     get_data,
@@ -112,11 +112,8 @@ def validate_accomplishments(df):
             df[col] = None
 
     grouped = (
-        df.groupby(["contractorname", "weekstartdate"])
-        .apply(lambda g: sum(
-            g[f"accomplishment{i}"].notna().sum()
-            for i in range(1, 6)
-        ))
+        df.groupby(["contractorname", "weekstartdate"])[[f"accomplishment{i}" for i in range(1, 6)]]
+        .apply(lambda g: g.notna().sum().sum())
         .reset_index(name="total_accomplishments")
     )
 
@@ -245,13 +242,13 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                             for row in weekly_data:
                                 insert_row("WeeklyReports", {
                                     **row,
-                                    "CreatedAt": datetime.utcnow(),
+                                    "CreatedAt": datetime.now(timezone.utc),
                                     "EnteredBy": "anonymous"
                                 })
                             for row in hours_data:
                                 insert_row("HoursTracking", {
                                     **row,
-                                    "CreatedAt": datetime.utcnow(),
+                                    "CreatedAt": datetime.now(timezone.utc),
                                     "EnteredBy": "anonymous"
                                 })
 
