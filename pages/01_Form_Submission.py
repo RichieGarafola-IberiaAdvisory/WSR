@@ -102,8 +102,8 @@ def highlight_rows(row):
     else:
         return ['background-color: #fff3cd'] * len(row)
 
-styled_df = weekly_df.style.apply(highlight_rows, axis=1)
-st.dataframe(styled_df, use_container_width=True)
+# styled_df = weekly_df.style.apply(highlight_rows, axis=1)
+# st.dataframe(styled_df, use_container_width=True)
 
 ###############################
 # Live Accomplishment Counter
