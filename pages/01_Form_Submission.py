@@ -7,7 +7,7 @@ from sqlalchemy import insert  # For database operations
 from sqlalchemy.exc import OperationalError
 import time
 import sys, os
-from datetime import datetime  # For working with dates
+from datetime import datetime, timezone  # For working with dates
 
 # Import shared modules
 # from utils.db import (
@@ -268,14 +268,14 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
                         for row in weekly_data:
                             insert_row("WeeklyReports", {
                                 **row,
-                                "CreatedAt": datetime.utcnow(),
+                                "CreatedAt": datetime.now(timezone.utc),
                                 "EnteredBy": "anonymous"
                             })
 
                         for row in hours_data:
                             insert_row("HoursTracking", {
                                 **row,
-                                "CreatedAt": datetime.utcnow(),
+                                "CreatedAt": datetime.now(timezone.utc),
                                 "EnteredBy": "anonymous"
                             })
                                 
@@ -331,85 +331,93 @@ if st.button("Submit Accomplishments", key="submit_accom"):
         st.warning("⚠️ Database is offline. Please try again later.")
     else:
         cleaned_accom_df = accom_df.dropna(how="all")
+
         if cleaned_accom_df.empty:
             st.warning("Please fill at least one row of accomplishments.")
         else:
-            try:
-                def insert_accomplishments():
-                    df = cleaned_accom_df.rename(columns=accomplishments_col_map)
-                    duplicates_found, inserted_count = [], 0
-                    employee_cache, workstream_cache = {}, {}
+            # Validate required fields
+            missing_required = []
+            for idx, row in cleaned_accom_df.iterrows():
+                if not row.get("Contractor (Last, First Name)") or not row.get("Workstream"):
+                    missing_required.append(idx + 1)  # 1-based row index
+            
+            if missing_required:
+                st.error(
+                    f"⚠️ The following row(s) are missing required fields "
+                    f"(Contractor or Workstream): {', '.join(map(str, missing_required))}. "
+                    "Please review and complete these rows before submitting."
+                )
+            else:
+                try:
+                    def insert_accomplishments():
+                        df = cleaned_accom_df.rename(columns=accomplishments_col_map)
+                        duplicates_found, inserted_count = [], 0
+                        employee_cache, workstream_cache = {}, {}
+                        existing_accomplishments = get_data("Accomplishments")
 
-                    existing_accomplishments = get_data("Accomplishments")
-
-                    with get_engine().begin() as conn:
-                        for _, row in df.iterrows():
-                            contractor = normalize_text(row.get("name", ""))
-                            if not contractor:
-                                continue
-
-                            # Cache and resolve EmployeeID
-                            if contractor not in employee_cache:
-                                employee_cache[contractor] = get_or_create_employee(
-                                    conn=conn,
-                                    contractor_name=contractor
+                        with get_engine().begin() as conn:
+                            for _, row in df.iterrows():
+                                contractor = normalize_text(row.get("name", ""))
+                                workstream_name = normalize_text(row.get("workstream_name", ""))
+                                reporting_week = (
+                                    pd.to_datetime(row.get("reporting_week"), errors='coerce').date()
+                                    if pd.notnull(row.get("reporting_week")) else None
                                 )
-                            employee_id = employee_cache[contractor]
 
-                            # Cache and resolve WorkstreamID safely
-                            workstream_name = normalize_text(row.get("workstream_name", ""))
-                            if workstream_name not in workstream_cache:
-                                workstream_cache[workstream_name] = get_or_create_workstream(
-                                    conn=conn,
-                                    workstream_name=workstream_name
-                                )
-                            workstream_id = workstream_cache[workstream_name]
+                                # Employee lookup
+                                if contractor not in employee_cache:
+                                    employee_cache[contractor] = get_or_create_employee(
+                                        conn=conn,
+                                        contractor_name=contractor
+                                    )
+                                employee_id = employee_cache[contractor]
 
-                            # Handle Reporting Week
-                            reporting_week = (
-                                pd.to_datetime(row.get("reporting_week"), errors='coerce').date()
-                                if pd.notnull(row.get("reporting_week")) else None
-                            )
+                                # Workstream lookup
+                                if workstream_name not in workstream_cache:
+                                    workstream_cache[workstream_name] = get_or_create_workstream(
+                                        conn=conn,
+                                        workstream_name=workstream_name
+                                    )
+                                workstream_id = workstream_cache[workstream_name]
 
-                            # Insert up to 5 accomplishments
-                            for i in range(1, 6):
-                                text_val = normalize_text(row.get(f"accomplishment_{i}", ""))
-                                if not text_val:
-                                    continue
+                                # Insert up to 5 accomplishments
+                                for i in range(1, 6):
+                                    text_val = normalize_text(row.get(f"accomplishment_{i}", ""))
+                                    if not text_val:
+                                        continue
 
-                                # Check for duplicates
-                                duplicate_check = existing_accomplishments[
-                                    (existing_accomplishments["EmployeeID"] == employee_id) &
-                                    (existing_accomplishments["WorkstreamID"] == workstream_id) &
-                                    (existing_accomplishments["DateRange"] == reporting_week) &
-                                    (existing_accomplishments["Description"].str.lower() == text_val.lower())
-                                ]
-                                if not duplicate_check.empty:
-                                    duplicates_found.append(text_val)
-                                    continue
+                                    # Check for duplicates
+                                    duplicate_check = existing_accomplishments[
+                                        (existing_accomplishments["EmployeeID"] == employee_id) &
+                                        (existing_accomplishments["WorkstreamID"] == workstream_id) &
+                                        (existing_accomplishments["DateRange"] == reporting_week) &
+                                        (existing_accomplishments["Description"].str.lower() == text_val.lower())
+                                    ]
+                                    if not duplicate_check.empty:
+                                        duplicates_found.append(text_val)
+                                        continue
 
-                                # Safe insert
-                                insert_row("Accomplishments", {
-                                    "EmployeeID": employee_id,
-                                    "WorkstreamID": workstream_id,
-                                    "DateRange": reporting_week,
-                                    "Description": text_val,
-                                    "CreatedAt": datetime.utcnow(),
-                                    "EnteredBy": "anonymous"
-                                })
-                                inserted_count += 1
+                                    # Insert
+                                    insert_row("Accomplishments", {
+                                        "EmployeeID": employee_id,
+                                        "WorkstreamID": workstream_id,
+                                        "DateRange": reporting_week,
+                                        "Description": text_val,
+                                        "CreatedAt": datetime.utcnow(),
+                                        "EnteredBy": "anonymous"
+                                    })
+                                    inserted_count += 1
 
-                    # Success message
-                    msg = f"Accomplishments submitted: {inserted_count}."
-                    if duplicates_found:
-                        msg += f" Skipped {len(duplicates_found)} duplicates."
-                    st.success(msg)
+                        msg = f"Accomplishments submitted: {inserted_count}."
+                        if duplicates_found:
+                            msg += f" Skipped {len(duplicates_found)} duplicates."
+                        st.success(msg)
 
-                with_retry(insert_accomplishments)
-                st.session_state["accom_df"] = pd.DataFrame([{col: "" for col in accom_columns}])  # Clear form
+                    with_retry(insert_accomplishments)
+                    st.session_state["accom_df"] = pd.DataFrame([{col: "" for col in accom_columns}])  # Clear form
 
-            except Exception as e:
-                st.error(f"Database insert failed: {type(e).__name__} - {e}")
+                except Exception as e:
+                    st.error(f"Database insert failed: {type(e).__name__} - {e}")
 
 
 ########################################
