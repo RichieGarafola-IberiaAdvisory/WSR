@@ -84,8 +84,8 @@ weekly_df = st.data_editor(
 )
 
 st.caption("ℹ️ Tip: Each contractor can submit multiple work products per week, "
-           "but must have exactly 5 accomplishments total. "
-           "The table below will highlight incomplete or excessive entries.")
+           "but must have exactly 5 accomplishments total. ")
+           # "The table below will highlight incomplete or excessive entries.")
 
 def highlight_rows(row):
     mapped = row.rename(index=weekly_report_col_map).rename(index=str.lower)
