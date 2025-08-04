@@ -3,6 +3,7 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy.exc import OperationalError
+from sqlalchemy import Table, MetaData, text
 import sys, os
 from datetime import datetime, timezone
 from utils.db import (
@@ -197,28 +198,22 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
             else:
                 try:
                     def insert_weekly():
-                        # Filter only columns that exist in both DataFrame and mapping
-                        valid_cols = [col for col in cleaned_df.columns if col in weekly_report_col_map]
-                        df = cleaned_df[valid_cols].rename(columns=weekly_report_col_map)
+                        metadata = MetaData()
+                        engine = get_engine()
+                        weekly_table = Table("WeeklyReports", metadata, autoload_with=engine)
+                        hours_table = Table("HoursTracking", metadata, autoload_with=engine)
                     
-                        # Ensure all required mapped columns exist even if missing
-                        for mapped_col in weekly_report_col_map.values():
-                            if mapped_col not in df.columns:
-                                df[mapped_col] = None
+                        with engine.begin() as conn:
+                            existing_keys = set(
+                                conn.execute(
+                                    text("SELECT EmployeeID, WeekStartDate, WorkProductTitle FROM WeeklyReports")
+                                ).fetchall()
+                            )
                     
-                        df = clean_dataframe_dates_hours(
-                            df,
-                            date_cols=["weekstartdate", "datecompleted"],
-                            numeric_cols=["hoursworked"]
-                        )
-
-                        df["effortpercentage"] = (df["hoursworked"] / 40) * 100
-
-                        with get_engine().begin() as conn:
-                            weekly_data, hours_data, employee_cache, workstream_cache = [], [], {}, {}
+                            weekly_data, hours_data = [], []
+                            employee_cache, workstream_cache = {}, {}
                             duplicates_found, inserted_count = [], 0
-                            existing = get_data("WeeklyReports")
-
+                    
                             for (contractor, week), group in df.groupby(["contractorname", "weekstartdate"]):
                                 if contractor not in employee_cache:
                                     employee_cache[contractor] = get_or_create_employee(
@@ -227,8 +222,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                                         laborcategory=normalize_text(group["laborcategory"].iloc[0])
                                     )
                                 employee_id = employee_cache[contractor]
-
-                                # Workstream handling (same for the entire group)
+                    
                                 workstream_name = normalize_text(group["workstream_name"].iloc[0])
                                 if workstream_name not in workstream_cache:
                                     workstream_cache[workstream_name] = get_or_create_workstream(
@@ -236,27 +230,25 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                                         workstream_name=workstream_name
                                     )
                                 workstream_id = workstream_cache[workstream_name]
-
-                                # Combine accomplishments
-                                all_accomplishments = []
+                    
+                                accomplishments = [
+                                    normalize_text(val)
+                                    for i in range(1, 6)
+                                    for val in group[f"accomplishment{i}"]
+                                    if pd.notna(val) and val != ""
+                                ]
+                                contribution_description = "; ".join(accomplishments)
+                    
                                 for _, row in group.iterrows():
-                                    for i in range(1, 6):
-                                        val = normalize_text(row.get(f"accomplishment{i}", ""))
-                                        if val:
-                                            all_accomplishments.append(val)
-
-                                contribution_description = "; ".join(all_accomplishments)
-                                
-                                for _, row in group.iterrows():
-                                    duplicate_check = existing[
-                                        (existing["EmployeeID"] == employee_id) &
-                                        (existing["WeekStartDate"] == week) &
-                                        (existing["WorkProductTitle"] == normalize_text(row.get("workproducttitle", "")))
-                                    ]
-                                    if not duplicate_check.empty:
+                                    key = (
+                                        employee_id,
+                                        week,
+                                        normalize_text(row.get("workproducttitle", ""))
+                                    )
+                                    if key in existing_keys:
                                         duplicates_found.append(row.get("workproducttitle"))
                                         continue
-
+                    
                                     weekly_data.append({
                                         "EmployeeID": employee_id,
                                         "WorkstreamID": workstream_id, 
@@ -277,9 +269,11 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                                         "Accomplishment3": row.get("accomplishment3", ""),
                                         "Accomplishment4": row.get("accomplishment4", ""),
                                         "Accomplishment5": row.get("accomplishment5", ""),
+                                        "CreatedAt": datetime.now(timezone.utc),
+                                        "EnteredBy": "anonymous"
                                     })
                                     inserted_count += 1
-
+                    
                                     if row["hoursworked"] > 0:
                                         hours_data.append({
                                             "EmployeeID": employee_id,
@@ -287,34 +281,27 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                                             "ReportingWeek": week,
                                             "HoursWorked": row["hoursworked"],
                                             "LevelOfEffort": row["effortpercentage"],
+                                            "CreatedAt": datetime.now(timezone.utc),
+                                            "EnteredBy": "anonymous"
                                         })
-
-                            for row in weekly_data:
-                                insert_row("WeeklyReports", {
-                                    **row,
-                                    "CreatedAt": datetime.now(timezone.utc),
-                                    "EnteredBy": "anonymous"
-                                })
-                            for row in hours_data:
-                                insert_row("HoursTracking", {
-                                    **row,
-                                    "CreatedAt": datetime.now(timezone.utc),
-                                    "EnteredBy": "anonymous"
-                                })
-
+                    
+                            if weekly_data:
+                                conn.execute(weekly_table.insert(), weekly_data)
+                            if hours_data:
+                                conn.execute(hours_table.insert(), hours_data)
+                    
                         msg = f"Weekly Reports submitted: {inserted_count}."
                         if duplicates_found:
                             msg += f" Skipped {len(duplicates_found)} duplicates."
                         st.success(msg)
-                        session_data = get_session_data()
-
+                
+                    # ✅ Call the function here
                     with_retry(insert_weekly)
                     st.success("Weekly Reports submitted successfully!")
                     session_data = get_session_data()
                     st.session_state["weekly_df"] = pd.DataFrame([{col: "" for col in weekly_columns}])
                 except Exception as e:
                     st.error(f"Database insert failed: {type(e).__name__} - {e}")
-
 
 ########################################
 # Helper function for testing purposes 
