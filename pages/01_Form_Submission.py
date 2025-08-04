@@ -101,19 +101,15 @@ def with_retry(func, max_attempts=3, delay=2):
 def validate_accomplishments(df):
     """
     Ensures each contractor has at least 5 accomplishments total for each week.
-    Returns a list of contractors/weeks that fail validation.
     """
-    # Normalize column names to lowercase
-    df = df.rename(columns=str.lower)
-
-    # Ensure all required columns exist
     required_cols = {"contractorname", "weekstartdate"} | {
         f"accomplishment{i}" for i in range(1, 6)
     }
-    missing_cols = required_cols - set(df.columns)
-    if missing_cols:
-        st.error(f"Missing required columns: {', '.join(missing_cols)}")
-        return pd.DataFrame()
+    
+    # Fill any missing expected columns with None
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = None
 
     grouped = (
         df.groupby(["contractorname", "weekstartdate"])
@@ -124,9 +120,8 @@ def validate_accomplishments(df):
         .reset_index(name="total_accomplishments")
     )
 
-    # Identify any contractor/week combo with anything other than 5 accomplishments
-    invalid = grouped[grouped["total_accomplishments"] != 5]
-    return invalid
+    return grouped[grouped["total_accomplishments"] != 5]
+
 
 
 
@@ -138,10 +133,10 @@ if st.button("Submit Weekly Reports", key="submit_weekly"):
         if cleaned_df.empty:
             st.warning("Please fill at least one row before submitting.")
         else:
-            # 🔑 Normalize column names for validation
-            lower_cleaned = cleaned_df.rename(columns=str.lower)
+            # Normalize column names for validation
+            mapped_cleaned = cleaned_df.rename(columns=weekly_report_col_map).rename(columns=str.lower)
+            invalid = validate_accomplishments(mapped_cleaned)
 
-            invalid = validate_accomplishments(lower_cleaned)
             if not invalid.empty:
                 st.error(
                     "🚨 Submission blocked: "
