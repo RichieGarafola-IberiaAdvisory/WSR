@@ -37,6 +37,7 @@ def load_accomplishments():
     """
     Loads accomplishments from WeeklyReports, exploding the 5 accomplishment fields
     into a normalized DataFrame suitable for dashboard KPIs.
+    Ensures all expected columns exist even if data is missing.
     """
     weekly_reports = get_data("WeeklyReports")
     employees = get_data("Employees")
@@ -44,8 +45,8 @@ def load_accomplishments():
     if weekly_reports.empty:
         return pd.DataFrame(
             columns=[
-                "EmployeeID", "ContractorName", "WorkstreamID",
-                "WeekStartDate", "Accomplishment"
+                "EmployeeID", "ContractorName", "VendorName", "LaborCategory",
+                "WorkstreamID", "WeekStartDate", "Accomplishment"
             ]
         )
 
@@ -74,11 +75,21 @@ def load_accomplishments():
             how="left"
         )
     else:
-        accomplishments_df["Name"] = None
-        accomplishments_df["VendorName"] = None
-        accomplishments_df["LaborCategory"] = None
+        # Ensure these columns always exist
+        for col in ["Name", "VendorName", "LaborCategory"]:
+            accomplishments_df[col] = None
+
+    # 🔑 Ensure final DataFrame always has the expected columns
+    expected_cols = [
+        "EmployeeID", "ContractorName", "VendorName", "LaborCategory",
+        "WorkstreamID", "WeekStartDate", "Accomplishment"
+    ]
+    for col in expected_cols:
+        if col not in accomplishments_df.columns:
+            accomplishments_df[col] = None
 
     return accomplishments_df
+
 
 df = load_accomplishments()
 
@@ -100,16 +111,13 @@ if not workstreams.empty:
 else:
     df["Workstream"] = df["WorkstreamID"].astype(str).apply(normalize_text)
 
-# Handle missing vendors
-df["Vendor"] = df["VendorName"].fillna("Unknown").astype(str).apply(normalize_text)
-
-
 # ----------------------------
 # Normalize text fields
 # ----------------------------
 df["Reporting Week"] = pd.to_datetime(df["WeekStartDate"], errors="coerce")
 df["Accomplishment"] = df["Accomplishment"].astype(str).apply(normalize_text)
-df["Contractor"] = df["ContractorName"].astype(str).apply(normalize_text)
+df["Contractor"] = df["ContractorName"].fillna("Unknown").astype(str).apply(normalize_text)
+df["Vendor"] = df["VendorName"].fillna("Unknown").astype(str).apply(normalize_text)
 
 # ----------------------------
 # Sidebar Filters
