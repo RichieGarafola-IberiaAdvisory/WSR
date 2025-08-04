@@ -203,8 +203,14 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                         weekly_table = Table("WeeklyReports", metadata, autoload_with=engine)
                         hours_table = Table("HoursTracking", metadata, autoload_with=engine)
                         
-                        # ✅ Use cleaned_df instead of df
+                        # Use cleaned_df instead of df
                         df = cleaned_df.rename(columns=weekly_report_col_map)
+                        df = clean_dataframe_dates_hours(
+                            df,
+                            date_cols=["weekstartdate", "datecompleted"],
+                            numeric_cols=["hoursworked"]
+                        )
+                        df["effortpercentage"] = (df["hoursworked"] / 40) * 100
                         
                         with engine.begin() as conn:
                             existing_keys = set(
