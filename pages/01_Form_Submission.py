@@ -248,6 +248,9 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                                 ]
                                 contribution_description = "; ".join(accomplishments)
                     
+                                def safe_val(value):
+                                    return normalize_text(value) if pd.notna(value) else ""
+                                
                                 for _, row in group.iterrows():
                                     key = (
                                         employee_id,
@@ -257,33 +260,34 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                                     if key in existing_keys:
                                         duplicates_found.append(row.get("workproducttitle"))
                                         continue
-                    
+                                
                                     weekly_data.append({
                                         "EmployeeID": employee_id,
                                         "WorkstreamID": workstream_id, 
                                         "WeekStartDate": week,
-                                        "DivisionCommand": normalize_text(row.get("divisioncommand", "")),
-                                        "WorkProductTitle": normalize_text(row.get("workproducttitle", "")),
+                                        "DivisionCommand": safe_val(row.get("divisioncommand", "")),
+                                        "WorkProductTitle": safe_val(row.get("workproducttitle", "")),
                                         "ContributionDescription": contribution_description,
-                                        "Status": normalize_text(row.get("status", "")),
-                                        "PlannedOrUnplanned": normalize_text(row.get("plannedorunplanned", "")),
+                                        "Status": safe_val(row.get("status", "")),
+                                        "PlannedOrUnplanned": safe_val(row.get("plannedorunplanned", "")),
                                         "DateCompleted": row["datecompleted"],
-                                        "DistinctNFR": normalize_text(row.get("distinctnfr", "")),
-                                        "DistinctCAP": normalize_text(row.get("distinctcap", "")),
+                                        "DistinctNFR": safe_val(row.get("distinctnfr", "")),
+                                        "DistinctCAP": safe_val(row.get("distinctcap", "")),
                                         "EffortPercentage": row["effortpercentage"],
                                         "ContractorName": contractor,
-                                        "GovtTAName": normalize_text(row.get("govttaname", "")),
-                                        "Accomplishment1": row.get("accomplishment1", ""),
-                                        "Accomplishment2": row.get("accomplishment2", ""),
-                                        "Accomplishment3": row.get("accomplishment3", ""),
-                                        "Accomplishment4": row.get("accomplishment4", ""),
-                                        "Accomplishment5": row.get("accomplishment5", ""),
+                                        "GovtTAName": safe_val(row.get("govttaname", "")),
+                                        "Accomplishment1": safe_val(row.get("accomplishment1", "N/A")) or "N/A",
+                                        "Accomplishment2": safe_val(row.get("accomplishment2", "N/A")) or "N/A",
+                                        "Accomplishment3": safe_val(row.get("accomplishment3", "N/A")) or "N/A",
+                                        "Accomplishment4": safe_val(row.get("accomplishment4", "N/A")) or "N/A",
+                                        "Accomplishment5": safe_val(row.get("accomplishment5", "N/A")) or "N/A",
                                         "CreatedAt": datetime.now(timezone.utc),
                                         "EnteredBy": "anonymous"
                                     })
+
                                     inserted_count += 1
-                    
-                                    if row["hoursworked"] > 0:
+                                    
+                                    if pd.notna(row["hoursworked"]) and row["hoursworked"] > 0:
                                         hours_data.append({
                                             "EmployeeID": employee_id,
                                             "WorkstreamID": workstream_id,
@@ -293,7 +297,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                                             "CreatedAt": datetime.now(timezone.utc),
                                             "EnteredBy": "anonymous"
                                         })
-                    
+                                        
                             if weekly_data:
                                 conn.execute(weekly_table.insert(), weekly_data)
                             if hours_data:
@@ -304,7 +308,7 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                             msg += f" Skipped {len(duplicates_found)} duplicates."
                         st.success(msg)
                 
-                    # ✅ Call the function here
+                    # Call the function here
                     with_retry(insert_weekly)
                     st.success("Weekly Reports submitted successfully!")
                     session_data = get_session_data()
