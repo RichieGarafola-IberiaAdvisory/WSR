@@ -34,44 +34,51 @@ if st.button("🔄 Refresh Accomplishments Data"):
 # ----------------------------
 @st.cache_data(ttl=600) # 8 * 3600 (8 hrs)
 def load_accomplishments():
-    from utils.db import load_table
-    accomplishments_df = load_table("Accomplishments")
-    employees_df = load_table("Employees")
-    workstreams_df = load_table("Workstreams")
+    """
+    Loads accomplishments from WeeklyReports, exploding the 5 accomplishment fields
+    into a normalized DataFrame suitable for dashboard KPIs.
+    """
+    weekly_reports = get_data("WeeklyReports")
+    employees = get_data("Employees")
 
-    # Handle different possible column names for Reporting Week
-    if "DateRange" in accomplishments_df.columns:
-        accomplishments_df.rename(columns={"DateRange": "Reporting Week"}, inplace=True)
-    elif "weekstartdate" in accomplishments_df.columns:
-        accomplishments_df.rename(columns={"weekstartdate": "Reporting Week"}, inplace=True)
-    elif "WeekStartDate" in accomplishments_df.columns:
-        accomplishments_df.rename(columns={"WeekStartDate": "Reporting Week"}, inplace=True)
-    elif "WeekEnding" in accomplishments_df.columns:
-        accomplishments_df.rename(columns={"WeekEnding": "Reporting Week"}, inplace=True)
-    else:
-        accomplishments_df["Reporting Week"] = pd.NaT
+    if weekly_reports.empty:
+        return pd.DataFrame(
+            columns=[
+                "EmployeeID", "ContractorName", "WorkstreamID",
+                "WeekStartDate", "Accomplishment"
+            ]
+        )
 
-    df = (
-        accomplishments_df
-        .merge(
-            employees_df[["EmployeeID", "Name", "VendorName", "LaborCategory"]],
+    # Melt the 5 accomplishment columns into one row per accomplishment
+    accomplishments_df = weekly_reports.melt(
+        id_vars=[
+            "EmployeeID", "ContractorName", "WorkstreamID", "WeekStartDate"
+        ],
+        value_vars=[
+            "Accomplishment1", "Accomplishment2", "Accomplishment3",
+            "Accomplishment4", "Accomplishment5"
+        ],
+        var_name="AccomplishmentField",
+        value_name="Accomplishment"
+    )
+
+    # Drop empty accomplishment rows
+    accomplishments_df = accomplishments_df.dropna(subset=["Accomplishment"])
+    accomplishments_df = accomplishments_df[accomplishments_df["Accomplishment"].str.strip() != ""]
+
+    # Merge with employees for additional details
+    if not employees.empty and "EmployeeID" in employees.columns:
+        accomplishments_df = accomplishments_df.merge(
+            employees[["EmployeeID", "Name", "VendorName", "LaborCategory"]],
             on="EmployeeID",
             how="left"
         )
-        .merge(
-            workstreams_df[["WorkstreamID", "Name"]],
-            on="WorkstreamID",
-            how="left"
-        )
-        .rename(columns={
-            "Description": "Accomplishment",
-            "Name_x": "Contractor",
-            "VendorName": "Vendor",
-            "LaborCategory": "Labor Category",
-            "Name_y": "Workstream"
-        })
-    )
-    return df
+    else:
+        accomplishments_df["Name"] = None
+        accomplishments_df["VendorName"] = None
+        accomplishments_df["LaborCategory"] = None
+
+    return accomplishments_df
 
 df = load_accomplishments()
 
@@ -80,13 +87,29 @@ if df.empty:
     st.stop()
 
 # ----------------------------
+# Join Workstream names and handle missing vendor
+# ----------------------------
+workstreams = get_data("Workstreams")
+if not workstreams.empty:
+    df = df.merge(
+        workstreams[["WorkstreamID", "Name"]].rename(columns={"Name": "WorkstreamName"}),
+        on="WorkstreamID",
+        how="left"
+    )
+    df["Workstream"] = df["WorkstreamName"].astype(str).apply(normalize_text)
+else:
+    df["Workstream"] = df["WorkstreamID"].astype(str).apply(normalize_text)
+
+# Handle missing vendors
+df["Vendor"] = df["VendorName"].fillna("Unknown").astype(str).apply(normalize_text)
+
+
+# ----------------------------
 # Normalize text fields
 # ----------------------------
-df["Reporting Week"] = pd.to_datetime(df["Reporting Week"], errors="coerce")
+df["Reporting Week"] = pd.to_datetime(df["WeekStartDate"], errors="coerce")
 df["Accomplishment"] = df["Accomplishment"].astype(str).apply(normalize_text)
-df["Contractor"] = df["Contractor"].astype(str).apply(normalize_text)
-df["Workstream"] = df["Workstream"].astype(str).apply(normalize_text)
-df["Vendor"] = df["Vendor"].astype(str).apply(normalize_text)
+df["Contractor"] = df["ContractorName"].astype(str).apply(normalize_text)
 
 # ----------------------------
 # Sidebar Filters
