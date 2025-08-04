@@ -39,8 +39,6 @@ from utils.helpers import (
     insert_accomplishment
 )
 
-from utils.form_helpers import validate_required_fields, insert_batch_accomplishments
-
 # Ensure tables are loaded
 # load_tables()
 
@@ -188,47 +186,113 @@ def with_retry(func, max_attempts=3, delay=2):
 # --- Submit Weekly Reports Button ---
 ######################################
 
-if st.button("Submit Accomplishments", key="submit_accom"):
+if st.button("Submit Weekly Reports", key="submit_weekly"):
     if session_data is None:
         st.warning("⚠️ Database is offline. Please try again later.")
     else:
-        cleaned_accom_df = accom_df.dropna(how="all")
-
-        if cleaned_accom_df.empty:
-            st.warning("Please fill at least one row of accomplishments.")
+        cleaned_df = weekly_df.dropna(how="all")
+        if cleaned_df.empty:
+            st.warning("Please fill at least one row before submitting.")
         else:
-            # ✅ Check for required fields
-            from utils.form_helpers import validate_required_fields, insert_batch_accomplishments
+            try:
+                def insert_weekly():
+                    df = cleaned_df.rename(columns=weekly_report_col_map)
+                    df = clean_dataframe_dates_hours(
+                        df,
+                        date_cols=["weekstartdate", "datecompleted"],
+                        numeric_cols=["hoursworked"]
+                    )
+                    df["effortpercentage"] = (df["hoursworked"] / 40) * 100
+                
+                    with get_engine().begin() as conn:
+                        weekly_data, hours_data, employee_cache = [], [], {}
+                        duplicates_found, inserted_count = [], 0
+                        
+                        existing = get_data("WeeklyReports")
+                        for _, row in df.iterrows():
+                            contractor = normalize_text(row.get("contractorname", ""))
+                            if not contractor:
+                                continue
+                        
+                            contractor_norm = normalize_text(row.get("contractorname", ""))
+                            if not contractor_norm:
+                                continue
+                            
+                            if contractor_norm not in employee_cache:
+                                employee_cache[contractor_norm] = get_or_create_employee(
+                                    contractor_name=contractor_norm,
+                                    vendor=normalize_text(row.get("vendorname", "")),
+                                    laborcategory=normalize_text(row.get("laborcategory", ""))
+                                )
+                            employee_id = employee_cache[contractor_norm]
 
-            missing_rows = validate_required_fields(
-                cleaned_accom_df,
-                ["Contractor (Last, First Name)", "Workstream"]
-            )
+                        
+                            # --- Duplicate Check ---
+                           
+                            duplicate_check = existing[
+                                (existing["EmployeeID"] == employee_id) &
+                                (existing["WeekStartDate"] == row["weekstartdate"]) &
+                                (existing["WorkProductTitle"] == normalize_text(row.get("workproducttitle", "")))
+                            ]
+                            if not duplicate_check.empty:
+                                duplicates_found.append(row.get("workproducttitle"))
+                                continue
+                        
+                            weekly_data.append({
+                                "EmployeeID": employee_id,
+                                "WeekStartDate": row["weekstartdate"],
+                                "DivisionCommand": normalize_text(row.get("divisioncommand", "")),
+                                "WorkProductTitle": normalize_text(row.get("workproducttitle", "")),
+                                "ContributionDescription": normalize_text(row.get("contributiondescription", "")),
+                                "Status": normalize_text(row.get("status", "")),
+                                "PlannedOrUnplanned": normalize_text(row.get("plannedorunplanned", "")),
+                                "DateCompleted": row["datecompleted"],
+                                "DistinctNFR": normalize_text(row.get("distinctnfr", "")),
+                                "DistinctCAP": normalize_text(row.get("distinctcap", "")),
+                                "EffortPercentage": row["effortpercentage"],
+                                "ContractorName": contractor,
+                                "GovtTAName": normalize_text(row.get("govttaname", "")),
+                            })
+                            inserted_count += 1
+                        
+                            if row["hoursworked"] > 0:
+                                hours_data.append({
+                                    "EmployeeID": employee_id,
+                                    "WorkstreamID": None,
+                                    "ReportingWeek": row["weekstartdate"],
+                                    "HoursWorked": row["hoursworked"],
+                                    "LevelOfEffort": row["effortpercentage"],
+                                })
+                        
+                        # Use insert_row for database writes
+                        for row in weekly_data:
+                            insert_row("WeeklyReports", {
+                                **row,
+                                "CreatedAt": datetime.now(timezone.utc),
+                                "EnteredBy": "anonymous"
+                            })
 
-            if missing_rows:
-                st.error(
-                    f"⚠️ The following row(s) are missing required fields: "
-                    f"{', '.join(map(str, missing_rows))}. "
-                    "Please review and complete these rows."
-                )
-            else:
-                try:
-                    def insert_accomplishments():
-                        df = cleaned_accom_df.rename(columns=accomplishments_col_map)
-                        existing = get_data("Accomplishments")
-
-                        with get_engine().begin() as conn:
-                            inserted, duplicates = insert_batch_accomplishments(conn, df, existing)
-
-                        msg = f"Accomplishments submitted: {inserted}."
-                        if duplicates:
-                            msg += f" Skipped {len(duplicates)} duplicates."
-                        st.success(msg)
-
-                    with_retry(insert_accomplishments)
-                    st.session_state["accom_df"] = pd.DataFrame([{col: "" for col in accom_columns}])
-                except Exception as e:
-                    st.error(f"Database insert failed: {type(e).__name__} - {e}")
+                        for row in hours_data:
+                            insert_row("HoursTracking", {
+                                **row,
+                                "CreatedAt": datetime.now(timezone.utc),
+                                "EnteredBy": "anonymous"
+                            })
+                                
+                
+                    msg = f"Weekly Reports submitted: {inserted_count}."
+                    if duplicates_found:
+                        msg += f" Skipped {len(duplicates_found)} duplicates."
+                    st.success(msg)
+                    session_data = get_session_data()  # refresh cached session data
+    
+    
+                with_retry(insert_weekly)
+                st.success("Weekly Reports submitted successfully!")
+                session_data = get_session_data()  # refresh cached session data
+                st.session_state["weekly_df"] = pd.DataFrame([{col: "" for col in weekly_columns}])  # Clear form
+            except Exception as e:
+                st.error(f"Database insert failed: {type(e).__name__} - {e}")
 
 
 
@@ -272,35 +336,85 @@ if st.button("Submit Accomplishments", key="submit_accom"):
             st.warning("Please fill at least one row of accomplishments.")
         else:
             # Validate required fields
-            missing_rows = validate_required_fields(
-                cleaned_accom_df,
-                ["Contractor (Last, First Name)", "Workstream"]
-            )
-
-            if missing_rows:
+            missing_required = []
+            for idx, row in cleaned_accom_df.iterrows():
+                if not row.get("Contractor (Last, First Name)") or not row.get("Workstream"):
+                    missing_required.append(idx + 1)  # 1-based row index
+            
+            if missing_required:
                 st.error(
-                    f"⚠️ The following row(s) are missing required fields: "
-                    f"{', '.join(map(str, missing_rows))}. "
-                    "Please review and complete these rows."
+                    f"⚠️ The following row(s) are missing required fields "
+                    f"(Contractor or Workstream): {', '.join(map(str, missing_required))}. "
+                    "Please review and complete these rows before submitting."
                 )
             else:
                 try:
                     def insert_accomplishments():
                         df = cleaned_accom_df.rename(columns=accomplishments_col_map)
+                        duplicates_found, inserted_count = [], 0
+                        employee_cache, workstream_cache = {}, {}
                         existing_accomplishments = get_data("Accomplishments")
 
                         with get_engine().begin() as conn:
-                            inserted_count, duplicates = insert_batch_accomplishments(
-                                conn, df, existing_accomplishments
-                            )
+                            for _, row in df.iterrows():
+                                contractor = normalize_text(row.get("name", ""))
+                                workstream_name = normalize_text(row.get("workstream_name", ""))
+                                reporting_week = (
+                                    pd.to_datetime(row.get("reporting_week"), errors='coerce').date()
+                                    if pd.notnull(row.get("reporting_week")) else None
+                                )
+
+                                # Employee lookup
+                                if contractor not in employee_cache:
+                                    employee_cache[contractor] = get_or_create_employee(
+                                        conn=conn,
+                                        contractor_name=contractor
+                                    )
+                                employee_id = employee_cache[contractor]
+
+                                # Workstream lookup
+                                if workstream_name not in workstream_cache:
+                                    workstream_cache[workstream_name] = get_or_create_workstream(
+                                        conn=conn,
+                                        workstream_name=workstream_name
+                                    )
+                                workstream_id = workstream_cache[workstream_name]
+
+                                # Insert up to 5 accomplishments
+                                for i in range(1, 6):
+                                    text_val = normalize_text(row.get(f"accomplishment_{i}", ""))
+                                    if not text_val:
+                                        continue
+
+                                    # Check for duplicates
+                                    duplicate_check = existing_accomplishments[
+                                        (existing_accomplishments["EmployeeID"] == employee_id) &
+                                        (existing_accomplishments["WorkstreamID"] == workstream_id) &
+                                        (existing_accomplishments["DateRange"] == reporting_week) &
+                                        (existing_accomplishments["Description"].str.lower() == text_val.lower())
+                                    ]
+                                    if not duplicate_check.empty:
+                                        duplicates_found.append(text_val)
+                                        continue
+
+                                    # Insert
+                                    insert_row("Accomplishments", {
+                                        "EmployeeID": employee_id,
+                                        "WorkstreamID": workstream_id,
+                                        "DateRange": reporting_week,
+                                        "Description": text_val,
+                                        "CreatedAt": datetime.utcnow(),
+                                        "EnteredBy": "anonymous"
+                                    })
+                                    inserted_count += 1
 
                         msg = f"Accomplishments submitted: {inserted_count}."
-                        if duplicates:
-                            msg += f" Skipped {len(duplicates)} duplicates."
+                        if duplicates_found:
+                            msg += f" Skipped {len(duplicates_found)} duplicates."
                         st.success(msg)
 
                     with_retry(insert_accomplishments)
-                    st.session_state["accom_df"] = pd.DataFrame([{col: "" for col in accom_columns}])  # Reset form
+                    st.session_state["accom_df"] = pd.DataFrame([{col: "" for col in accom_columns}])  # Clear form
 
                 except Exception as e:
                     st.error(f"Database insert failed: {type(e).__name__} - {e}")
