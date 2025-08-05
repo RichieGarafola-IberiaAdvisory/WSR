@@ -3,6 +3,11 @@ import pandas as pd
 from unittest.mock import patch, MagicMock
 import importlib
 from pathlib import Path
+import altair as alt
+alt.theme.enable('quartz')
+
+import warnings
+warnings.filterwarnings("ignore", category=AltairDeprecationWarning)
 
 PAGES_DIR = Path("pages")
 PAGE_FILES = [f.name for f in PAGES_DIR.glob("*.py") if not f.name.startswith("__")]
