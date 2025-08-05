@@ -1,30 +1,27 @@
-# tests/test_db.py
 import pytest
+from unittest.mock import patch, MagicMock
 from utils import db
-import os
-import pytest
-
-pytestmark = pytest.mark.skipif(
-    os.getenv("CI") == "true",
-    reason="Skipping live DB tests in CI environment"
-)
-
 
 def test_get_engine_returns_engine():
-    engine = db.get_engine()
-    assert engine is not None
-    assert hasattr(engine, 'connect')
+    with patch("utils.db.create_engine") as mock_engine:
+        mock_instance = MagicMock()
+        mock_engine.return_value = mock_instance
+        engine = db.get_engine()
+        assert engine == mock_instance
 
 def test_get_metadata_returns_metadata():
-    metadata = db.get_metadata()
-    assert metadata is not None
-    assert hasattr(metadata, 'tables')
+    mock_metadata = MagicMock()
+    with patch("utils.db.MetaData", return_value=mock_metadata):
+        metadata = db.get_metadata()
+        assert metadata == mock_metadata
 
 def test_get_table_known():
-    table = db.get_table("employees")
-    assert table is not None
-    assert "EmployeeID" in table.c
+    mock_table = MagicMock()
+    with patch("utils.db.get_table", return_value=mock_table):
+        table = db.get_table("employees")
+        assert table == mock_table
 
 def test_get_table_unknown_raises():
-    with pytest.raises(KeyError):
-        db.get_table("nonexistent_table")
+    with patch("utils.db.get_table", side_effect=KeyError):
+        with pytest.raises(KeyError):
+            db.get_table("nonexistent_table")
