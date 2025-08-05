@@ -9,9 +9,8 @@ def test_get_engine_returns_engine():
         engine = db.get_engine()
         assert engine == mock_instance
 
-
 def test_get_metadata_returns_metadata():
-    with patch("sqlalchemy.MetaData") as mock_meta_class:
+    with patch("utils.db.MetaData") as mock_meta_class:
         mock_instance = MagicMock()
         mock_meta_class.return_value = mock_instance
         metadata = db.get_metadata()
