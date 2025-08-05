@@ -413,6 +413,26 @@ with row3_col2:
 # --- Heatmap: Hours by Contractor and Month ---
 st.subheader("Monthly Hours Heatmap by Contractor")
 
+
+
+
+
+
+
+
+
+
+st.write("Debug Data Sample:", df.head())
+st.write("Shape:", df.shape)
+
+
+
+
+
+
+
+
+
 # @st.cache_data(ttl=600)
 # def load_heatmap_data():
 #     query = text("""
