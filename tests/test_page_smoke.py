@@ -4,7 +4,12 @@ from unittest.mock import patch, MagicMock
 import importlib
 from pathlib import Path
 import altair as alt
-alt.theme.enable('quartz')
+
+@alt.theme.register('quartz', enable=True)
+def quartz_theme():
+    return alt.theme.ThemeConfig(
+        {'height': 400, 'width': 700}
+    )
 
 import warnings
 warnings.filterwarnings("ignore")
