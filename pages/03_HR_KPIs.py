@@ -413,26 +413,6 @@ with row3_col2:
 # --- Heatmap: Hours by Contractor and Month ---
 st.subheader("Monthly Hours Heatmap by Contractor")
 
-
-
-
-
-
-
-
-
-
-st.write("Debug Data Sample:", df.head())
-st.write("Shape:", df.shape)
-
-
-
-
-
-
-
-
-
 # @st.cache_data(ttl=600)
 # def load_heatmap_data():
 #     query = text("""
@@ -466,25 +446,55 @@ def load_heatmap_data():
     weekly = get_data("WeeklyReports")
     employees_df = get_data("Employees")
 
-    df = weekly.merge(employees_df[["EmployeeID", "Name"]], on="EmployeeID", how="left")
-    df["Month"] = pd.to_datetime(df["WeekStartDate"]).dt.to_period("M").dt.to_timestamp()
-    df["Hours"] = (df["EffortPercentage"] / 100) * 40
+    df = weekly.merge(
+        employees_df[["EmployeeID", "Name"]],
+        on="EmployeeID",
+        how="left"
+    )
 
-    return (
+    # Ensure datetime conversion
+    df["WeekStartDate"] = pd.to_datetime(df["WeekStartDate"], errors="coerce")
+
+    # Create month column
+    df["Month"] = df["WeekStartDate"].dt.to_period("M").astype(str)
+
+    # Calculate total hours
+    df["Hours"] = (df["EffortPercentage"].fillna(0) / 100) * 40
+
+    # Group by Contractor and Month
+    grouped = (
         df.groupby(["Name", "Month"], as_index=False)["Hours"]
         .sum()
         .rename(columns={"Name": "Contractor"})
     )
 
+    return grouped
+
 try:
-    heatmap_df = load_heatmap_data().pivot(index="Contractor", columns="Month", values="Hours").fillna(0)
-    
-    st.dataframe(
-        heatmap_df.style.background_gradient(axis=1, cmap="Blues"),
-        use_container_width=True
-    )
-except Exception:
-    st.warning("⚠️ Unable to load heatmap data.")
+    heatmap_df = load_heatmap_data().pivot(
+        index="Contractor",
+        columns="Month",
+        values="Hours"
+    ).fillna(0)
+
+    if heatmap_df.empty:
+        st.warning("⚠️ No data available for heatmap.")
+    else:
+        # Use Plotly for a true heatmap
+        import plotly.express as px
+        fig = px.imshow(
+            heatmap_df,
+            labels=dict(x="Month", y="Contractor", color="Total Hours"),
+            x=heatmap_df.columns,
+            y=heatmap_df.index,
+            aspect="auto",
+            color_continuous_scale="Blues"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+except Exception as e:
+    st.warning(f"⚠️ Unable to load heatmap data: {e}")
+
     
 # --- Contractor Coverage Check ---
 st.subheader("Contractors with Zero Submissions")
