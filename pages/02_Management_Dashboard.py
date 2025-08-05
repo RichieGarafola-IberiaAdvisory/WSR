@@ -197,7 +197,7 @@ selected_contractors = st.sidebar.multiselect("Contractor", contractors, default
 if st.sidebar.button("Reset Filters"):
     for key in ["selected_weeks", "selected_vendors", "selected_contractors"]:
         st.session_state[key] = []
-    st.experimental_rerun()
+    st.rerun()
 
 
 # Apply filters
