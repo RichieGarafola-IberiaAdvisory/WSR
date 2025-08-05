@@ -67,7 +67,7 @@ if st.button("🔄 Refresh HR Data"):
     load_all_data.clear()
     if "session_data" in st.session_state:
         del st.session_state["session_data"]
-    st.experimental_rerun()
+    st.rerun()
 
 
 ################################
@@ -231,7 +231,7 @@ selected_labor_cats = st.sidebar.multiselect("Select Labor Categories", labor_ca
 
 # Reset button
 if st.sidebar.button("🔄 Reset Filters"):
-    st.experimental_rerun()
+    st.rerun()
 
 # Apply filters
 filters = df["Reporting Week"].between(pd.to_datetime(start_date), pd.to_datetime(end_date))
