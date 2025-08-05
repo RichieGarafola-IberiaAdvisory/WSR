@@ -27,7 +27,7 @@ if st.button("🔄 Refresh Accomplishments Data"):
     load_all_data.clear()
     if "session_data" in st.session_state:
         del st.session_state["session_data"]
-    st.experimental_rerun()
+    st.rerun()
 
 # ----------------------------
 # Load Data (Cached)
@@ -137,7 +137,7 @@ if st.sidebar.button("Reset Filters"):
     for key in ["selected_weeks", "selected_contractors", "selected_workstreams", "selected_vendors", "search_keyword"]:
         if key in st.session_state:
             del st.session_state[key]
-    st.experimental_rerun()
+    st.rerun()
 
 # ----------------------------
 # Apply Filters
