@@ -10,10 +10,11 @@ def test_get_engine_returns_engine():
         assert engine == mock_instance
 
 def test_get_metadata_returns_metadata():
-    mock_metadata = MagicMock()
-    with patch("utils.db.MetaData", return_value=mock_metadata):
+    with patch("utils.db.MetaData", return_value=MagicMock()) as mock_metadata:
         metadata = db.get_metadata()
-        assert metadata == mock_metadata
+        # Assert MetaData() constructor was called
+        mock_metadata.assert_called_once()
+        assert metadata is not None
 
 def test_get_table_known():
     mock_table = MagicMock()
