@@ -60,7 +60,7 @@ if st.button("🔄 Refresh Data"):
     load_all_data.clear()
     if "session_data" in st.session_state:
         del st.session_state["session_data"]
-    st.experimental_rerun()
+    st.rerun()
 
 
 ##################################
