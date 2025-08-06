@@ -70,6 +70,10 @@ weekly_default = pd.DataFrame([{col: "" for col in weekly_columns}])
 weekly_default.at[0, "Reporting Week (MM/DD/YYYY)"] = most_recent_monday
 weekly_default.at[0, "If Completed (YYYY-MM-DD)"] = pd.NaT
 
+# Ensure Accomplishment columns start as None
+for i in range(1, 6):
+    weekly_default.at[0, f"Accomplishment {i}"] = None
+    
 # Editable table
 disabled = session_data is None
 weekly_df = st.data_editor(
