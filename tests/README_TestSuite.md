@@ -1,137 +1,239 @@
-
 # Test Suite Documentation: Logic and Significance
 
-## Overview
-This test suite validates the core components of the WSR (Weekly Status Reports) application. It ensures:
+## **Overview**
 
--    **Database integrity**
--    **Helper utility reliability**
--    **Form submission correctness**
--    **Page load stability**
--    **Query functionality**
+This test suite validates the full functionality of the WSR (Weekly
+Status Reports) application. It covers: 
+- **Database integrity and schema**
+- **Helper utilities**
+- **Form submission workflows (normal, edge cases, negative scenarios)**
+- **Validation functions**
+- **Page loading stability**
+- **Custom queries**
 
-The tests are structured using pytest and integrated with GitHub Actions for continuous integration (CI). This ensures every code change is automatically tested before deployment, minimizing risk and maintaining system stability.
+All tests are built with **pytest** and integrated with **GitHub
+Actions** for CI/CD, ensuring that every code change is automatically
+tested before deployment to maintain stability and reliability.
 
----
+This documentation is structured to support
+future developers with full clarity on the **purpose**, **logic**, and
+**significance** of each test module.
 
-## `tests/test_db.py`
+------------------------------------------------------------------------
 
-### Purpose
-Verifies the database connection, schema reflection, and CRUD utility methods in `utils/db.py`.
+## **Database Tests -- `tests/test_db.py`**
 
-### Tests
+-   **Purpose:** Verify database connectivity, schema, and table
+    retrieval utilities.
+-   **Tests:**
+    -   `test_get_engine_returns_engine` → Ensures valid SQLAlchemy engine
+        creation is returned.
+    -   `test_get_metadata_returns_metadata` → Confirms schema
+        reflection, ensures metadata has a tables attribute.
+    -   `test_get_table_known` → Checks essential tables exist with
+        expected columns.
+    -   `test_get_table_unknown_raises` → Verifies proper error handling
+        for invalid tables.
+-   **Risk Mitigated:** Broken database connections, missing or misnamed
+    tables.
 
-#### `test_get_engine_returns_engine`
-- **Logic:** Calls `get_engine()` and asserts that a SQLAlchemy engine object is returned.
-- **Significance:** Ensures the application can successfully initiate a database connection—fundamental for all downstream operations.
+-   **Significance:** These are foundational tests---they ensure that any function
+depending on the database can safely rely on valid connections and an
+accurate schema. If these fail, nearly all downstream functionality will
+break.
 
-#### `test_get_metadata_returns_metadata`
-- **Logic:** Calls `get_metadata()` and checks for the presence of `tables` attribute in the returned metadata object.
-- **Significance:** Confirms that the database schema is accessible and properly reflected, enabling dynamic table access and preventing runtime schema issues.
 
-#### `test_get_table_known`
-- **Logic:** Fetches a known table (e.g., `"employees"`) using `get_table(name)` and checks if expected columns exist.
-- **Significance:** Ensures that essential tables are present in the database and contain expected schema, preventing runtime errors in dependent logic.
+------------------------------------------------------------------------
 
-#### `test_get_table_unknown_raises`
-- **Logic:** Attempts to fetch a non-existent table and expects a `KeyError`.
-- **Significance:** Validates error handling for invalid table access, helping to catch and log issues early during development.
+## **Helper Function Tests -- `tests/test_helpers.py`**
 
----
-## `tests/test_form_submission.py`
+-   **Purpose:** Validate utility functions for normalization, ID
+    generation, data cleaning, and helper DB interactions.
+-   **Tests:**
+    -   `normalize_text`→ Standardizes string formatting (title case,
+    whitespace removal).
+    -   `generate_employee_key`→ Creates deterministic, SHA-256--based
+    unique identifiers for employees.
+    -   `generate_public_id`→ Formats public-facing IDs from names and
+    numeric suffixes.
+    -   `clean_dataframe_dates_hours`→ Converts date strings and numeric
+    inputs into clean, type-safe formats.
+    -   `get_or_create_employee` / `get_or_create_workstream`→ Lookup or
+    insert database records in a controlled manner.
 
-### Purpose
-Ensures weekly report submissions and accomplishments are handled correctly and consistently.
+-   **Risk Mitigated:** Data corruption or inconsistent transformations
+    affecting reporting.
 
-### Tests 
--    Employee creation via get_or_create_employee
--    Workstream creation via get_or_create_workstream
--    Weekly report insertion with auditing fields (CreatedAt, EnteredBy)
--    Hours tracking logic and data accuracy
--    Prevention of duplicate entries using unique keys
+-   **Significance:** These functions are used throughout the application. Errors here
+would silently corrupt data, introduce duplicates, or cause form
+submissions to fail unexpectedly. Ensuring consistency here reduces bugs
+system-wide.
 
-### Significance
-Form submissions are the primary data entry point of the system. These tests:
+------------------------------------------------------------------------
 
--    Validate data integrity during input
--    Confirm auditing fields are correctly populated
--    Ensure duplicates are prevented (using SHA-256 hash keys) 
+## **Form Submission Tests**
 
----
+### `tests/test_form_submission.py`
 
-## `tests/test_helpers.py`
+-   **Purpose:** Test the main weekly report submission pipeline. Validates
+  the full report submission workflow from form input to database insertion.
+-   **Tests:**
+    -   `test_cleaning_and_insertion_pipeline`→ Verifies that form data is
+        cleaned and employees are correctly matched or created.
+    -   `test_successful_form_submission`→ Tests the standard success
+        path---clean data, employee creation, and data insertion.
+    -   `test_bad_data_rejected`→ Ensures that submissions with invalid
+        inputs do not proceed to insertion.
+    -   `test_empty_required_fields`→ Fails if critical fields like name,
+        vendor, or labor category are blank.
+    -   `test_duplicate_submission`→ Ensures the same form submission
+        doesn't create duplicate entries.
+    -   `test_max_length_fields`→ Verifies that long strings (e.g., names)
+        do not cause insertion failures.
+    -   `test_invalid_date_format`→ Rejects invalid date inputs.
+-   **Risk Mitigated:** Prevents bad or duplicate data entries that
+    could compromise reports.
+    
+-   **Significance:** This module tests the core user interaction: entering
+  and submitting reports. It's essential to prevent dirty, duplicate, or partial
+data from reaching the database. Without this, dashboards and reports could
+be severely compromised.
 
-### Purpose
-Validates utility functions in utils/helpers.py to ensure consistent data cleaning and key generation.
 
-### Tests
-**Data normalization:** Whitespace trimming, title case conversion.
-**Date cleaning:** Parsing and coercing date formats.
-**Numeric cleaning:** Ensuring numeric fields are correctly converted.
-**Key generation:** Unique employee and public IDs.
-**Monday calculation:** Correctly identifying the most recent Monday for reporting periods.
+### `tests/test_form_submission_edge_cases.py`
 
-### Significance
-Helper functions are used across multiple modules. Testing them:
+-   **Purpose:** Tests data entry edge cases around accomplishment field validation.
+-   **Tests:**
+    -   `test_validate_accomplishments_with_extra_entries`→ Validates that
+    exactly 5 accomplishments are accepted.
+    -   `test_validate_accomplishments_with_missing_entries`→ Rejects
+    submissions with fewer than 5 accomplishments.
 
-    - Ensures centralized logic behaves consistently
-    - Prevents silent data corruption or transformation errors
-    - Reduces redundancy in debugging other parts of the app
+-   **Risk Mitigated:** Ensures consistent validation rules and prevents
+    incomplete submissions.
 
----
+-   **Significance:** These tests ensure that performance reviews and weekly output tracking
+are consistently measured. Submissions missing accomplishments could
+weaken client-facing metrics.
 
-## `tests/test_page_smoke.py`
+### `tests/test_form_submission_negative.py`
 
-### Purpose
-Conducts smoke tests to ensure all Streamlit pages load without fatal errors or missing dependencies.
+-   **Purpose:** Tests invalid or minimal data scenarios (negative scenarios).
+-   **Tests:**
+    -   `test_missing_required_fields_blocks_submission`→ Prevents empty
+    submissions from proceeding.
+-   `test_partial_required_fields_allows_submission`→ Ensures forms
+    missing critical fields are rejected.
+    
+-   **Risk Mitigated:** Stops incomplete or incorrect data from entering
+    the database.
 
-### Tests
-    - Dynamically imports every page in pages/*.py
-    - Mocks database responses to avoid live DB dependency
-    - Checks that each page can render successfully without crashing
+-   **Significance:** These tests enforce strict submission rules, ensuring accountability and
+report completeness. Preventing invalid entries at this level avoids
+downstream cleanup or auditing issues.
 
-### Significance
-    - Guarantees application stability during navigation
-    - Detects import or schema-related issues early
-    - Provides fast feedback for CI/CD pipelines
+------------------------------------------------------------------------
 
----
+## **Validation Function Tests -- `tests/test_validation_functions.py`**
 
-## `tests/test_queries.py`
+-   **Purpose:** Ensures accomplishment validation flags scenarios where users attempt to
+bypass the 5-accomplishment rule across rows.
+-   **Tests:**
+    -   `test_exceeding_accomplishments_flagged`→ Ensures more than 5 tasks,
+    even across multiple rows, are caught and flagged.
 
-### Purpose
-To test any custom SQL or ORM queries implemented in a `queries.py` utility or report generator module.
+-   **Risk Mitigated:** Over-reporting or invalid accomplishment counts.
 
-### Tests
-Basic test confirms that at least one query runs and returns a plausible result set.
+-   **Significance:** Without this safeguard, users could split their accomplishments across
+multiple rows to appear more productive---compromising analytics and
+fairness.
+  
+------------------------------------------------------------------------
 
-### Significance
-Prevents silent failures in dashboard widgets or PDF reporting tools that depend on these queries. Ensures correctness of business logic tied to metrics, charts, or insights.
+## **Page Smoke Tests -- `tests/test_page_smoke.py`**
+-   **Purpose:** Validates that every Streamlit page: - Can load without exceptions - Has
+required DB schema - Returns valid SQL/DF data
+-   **Tests:**
+    -   Automatically loads all files in `pages/`
+    -   Mocks DB and query results to prevent live dependency
+    -   Confirms page renders without error
 
----
+-   **Risk Mitigated:** Navigation failures or runtime crashes in
+    production.
 
-## CI/CD Integration
+-   **Significance:** Prevents last-minute production failures during navigation. These smoke
+tests act as an early warning system for broken imports, DB schema
+drift, or dependency mismatches.
 
-All tests are run automatically on each push to the main branch via GitHub Actions:
-- **Failing a test = Block deployment.**
-- **Passing tests = Signals readiness for merging or deploying changes.**
+------------------------------------------------------------------------
 
-This minimizes risk and ensures every code change respects previously working logic.
+## **Query Tests -- `tests/test_queries.py`**
+-   **Purpose:** Validates raw SQL queries used in dashboard reports or metrics.
+-   Verifies that custom SQL queries:
+-   **Tests:**
+    -   `test_weekly_reports_query_compiles`→ Ensures the
+    `weekly_reports_with_employees` query is syntactically valid and
+    contains a `SELECT` clause.
 
----
+-   **Risk Mitigated:** Prevents dashboard/reporting failures due to
+    broken SQL statements.
+
+-   **Significance:** A single typo or broken query could bring down your **entire reporting
+interface**. This test ensures the foundation of analytics remains
+intact.
+
+------------------------------------------------------------------------
+
+## **Fixtures and Mocks -- `conftest.py`**
+-   **Purpose:** Provides global fixtures to mock: - Database tables and metadata -
+Helper methods - SQLAlchemy `execute` calls.
+  
+-   **Significance:** Allows test isolation from live databases, enabling fast, safe,
+repeatable unit tests.
+
+------------------------------------------------------------------------
+
+## ✅ **Test Coverage Goals**
+
+  --------------------------------------------------------------------------
+  Test File                        Purpose                      Coverage
+                                                                Goal
+  -------------------------------- ---------------------------- ------------
+  `test_db.py`                     DB schema & connectivity     95%
+
+  `test_helpers.py`                Utility logic                100%
+
+  `test_form_submission*.py`       Form workflows & edge cases  90%
+
+  `test_validation_functions.py`   Accomplishment validation    100%
+
+  `test_page_smoke.py`             Page stability               100%
+
+  `test_queries.py`                Custom query validity        100%
+  --------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+
+## **Continuous Integration**
+
+-   All tests automatically run on every push via GitHub Actions.
+-   **Failing tests block deployment** to protect production integrity.
+-   Passing tests confirm the system is stable and ready for release.
 
 ## Summary
 
-| Test File              | Primary Target               | Risk Mitigated                           |
-|------------------------|------------------------------|-------------------------------------------|
-| `test_db.py`           | DB schema + connection       | Missing tables, bad connection strings    |
-| `test_helpers.py`      | Utility logic                | Silent data corruption or transform bugs  |
-| `test_queries.py`      | Report queries               | Broken metrics, failed insights generation|
+This test suite is the **quality gate** of the WSR application. Future
+developers can use this documentation to:
 
-## Test Coverage Goals
+-   Understand which parts of the system are being tested
+-   Modify or extend coverage safely
+-   Rebuild trust in the system after changes
 
-    - Database: 95% coverage
-    - Helpers: 100% coverage
-    - Form Submission: 90% coverage
-    - Page Smoke Tests: 100% coverage
-    - Queries: 100% syntax coverage
+Each test reflects a deliberate design decision to guard against
+specific risks---**from data corruption to usability failures**.
+
+---
+
+# Maintain it. Expand it. Trust it.
+
+
