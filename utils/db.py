@@ -7,6 +7,14 @@ import urllib
 import time
 import threading
 from functools import wraps
+import logging
+
+logging.basicConfig(
+    filename="db_calls.log",
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+
 
 _engine = None
 _metadata = None
@@ -168,19 +176,29 @@ def load_all_data():
 
     return data
 
-@st.cache_data(ttl=600)
 @with_reconnect
 def load_table(table_name: str):
-    """Load single table or fallback schema."""
-    engine = get_engine()
-    try:
-        with engine.connect() as conn:
-            df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
-            if df.empty:
-                return _empty_table(table_name)
-            return df
-    except Exception:
-        return _empty_table(table_name)
+    """Load single table or fallback schema with table-specific TTL caching."""
+    ttl_seconds = {
+        "Employees": 43200,       # 12 hours
+        "Workstreams": 43200,     # 12 hours
+        "WeeklyReports": 600,     # 10 minutes
+        "HoursTracking": 600      # 10 minutes
+    }.get(table_name, 300)        # Default 5 minutes
+
+    @st.cache_data(ttl=ttl_seconds)
+    def _load():
+        engine = get_engine()
+        try:
+            with engine.connect() as conn:
+                df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
+                if df.empty:
+                    return _empty_table(table_name)
+                return df
+        except Exception:
+            return _empty_table(table_name)
+
+    return _load()
 
 def get_session_data():
     """Load data for this session only (no extra DB calls if shared cache is fresh)."""
@@ -204,8 +222,9 @@ def insert_row(table_name: str, row_data: dict):
     with engine.begin() as conn:
         cols = ", ".join(row_data.keys())
         vals = ", ".join([f":{k}" for k in row_data.keys()])
-        # Dynamically fetch the primary key for OUTPUT
         id_col = PRIMARY_KEYS.get(table_name)
+
+        logging.info(f"INSERT → Table: {table_name}, Columns: {list(row_data.keys())}, Data: {row_data}")
 
         if id_col:
             result = conn.execute(
@@ -226,4 +245,5 @@ def insert_row(table_name: str, row_data: dict):
         del st.session_state["session_data"]
 
     return inserted_id
+
 
