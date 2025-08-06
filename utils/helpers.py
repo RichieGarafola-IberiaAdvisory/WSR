@@ -4,6 +4,8 @@ from datetime import date, timedelta, datetime
 import hashlib
 from sqlalchemy.sql import text
 from utils.db import get_data, insert_row, update_row
+from functools import lru_cache
+
 
 # -----------------------------
 # Constants
@@ -49,6 +51,26 @@ def generate_public_id(name: str, numeric_id: int) -> str:
     base = f"{parts[-1]}-{parts[0]}" if len(parts) >= 2 else parts[0]
     return f"{base.upper()}-{numeric_id:03d}"
 
+@lru_cache(maxsize=128)
+def find_employee_by_key(uniquekey: str):
+    employees = get_data("Employees")
+    employees["UniqueKey"] = employees["UniqueKey"].astype(str).str.strip()
+    match = employees[employees["UniqueKey"] == uniquekey]
+    if not match.empty:
+        return int(match.iloc[0]["EmployeeID"])
+    return None
+
+
+@lru_cache(maxsize=128)
+def find_workstream_by_name(name: str):
+    name_norm = normalize_text(name)
+    workstreams = get_data("Workstreams")
+    match = workstreams[workstreams["Name"].astype(str).str.strip().str.lower() == name_norm.lower()]
+    if not match.empty:
+        return int(match.iloc[0]["WorkstreamID"])
+    return None
+
+
 # -----------------------------
 # Core Helpers
 # -----------------------------
@@ -93,11 +115,10 @@ def get_or_create_employee(conn=None, contractor_name=None, vendor=None, laborca
         )
         return employee_id
 
-    existing = get_data("Employees")
-    existing["UniqueKey"] = existing["UniqueKey"].str.strip()
-    match = existing[existing["UniqueKey"] == uniquekey]
-    if not match.empty:
-        return int(match.iloc[0]["EmployeeID"])
+    existing_id = find_employee_by_key(uniquekey)
+    if existing_id:
+        return existing_id
+
 
     employee_id = insert_row("Employees", {
         "Name": contractor_norm,
@@ -141,10 +162,10 @@ def get_or_create_workstream(conn=None, workstream_name=None, entered_by=DEFAULT
         ).scalar_one()
         return int(new_id)
 
-    existing = get_data("Workstreams")
-    match = existing[existing["Name"].str.strip().str.lower() == workstream_norm.lower()]
-    if not match.empty:
-        return int(match.iloc[0]["WorkstreamID"])
+    existing_id = find_workstream_by_name(workstream_norm)
+    if existing_id:
+        return existing_id
+
 
     return insert_row("Workstreams", {
         "Name": workstream_norm,
