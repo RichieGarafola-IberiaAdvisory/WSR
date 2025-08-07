@@ -3,6 +3,11 @@ import streamlit as st  # For creating the interactive web app
 import pandas as pd  # For working with tabular data
 import plotly.express as px  # For creating visualizations
 import re  # For text cleaning using regular expressions
+from utils.auth import (
+        login_form, 
+        account_box, 
+        require_role
+    )
 
 ############################
 # --- Page Configuration ---
@@ -48,6 +53,16 @@ st.image("images/Iberia-Advisory.png", width=250)
 # Display the main title and a short description below it
 st.title("Management Dashboard") 
 st.caption("Visualize and filter team effort across vendors, divisions, and contractors.")
+
+
+##########################
+# ---- Auth gate ----
+##########################
+if not st.session_state.get("authenticated"):
+    login_form()
+    st.stop()
+account_box()
+require_role(["viewer", "admin"])
 
 #################################
 # --- Refresh Data on Demand ---
