@@ -91,3 +91,16 @@ def login_form():
                 st.rerun()
             else:
                 st.error("Invalid credentials. Please check your email and password.")
+
+def account_box():
+    with st.sidebar:
+        if st.session_state.get("authenticated"):
+            st.markdown(
+                f"**{st.session_state.user_name}**  \n"
+                f"`{st.session_state.user_role}`  \n"
+                f"{st.session_state.get('organization','')}"
+            )
+            if st.button("Logout"):
+                logout()
+                st.rerun()
+
