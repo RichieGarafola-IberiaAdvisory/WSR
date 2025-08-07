@@ -108,6 +108,10 @@ CREATE TABLE Roster (
     LaborCategory NVARCHAR(255),
     Organization NVARCHAR(255),
     Role NVARCHAR(50) DEFAULT 'user', -- e.g., admin, user, viewer
+
+    -- 🔐 Password storage (hash only)
+    PasswordHash NVARCHAR(255) NOT NULL,
+
     CreatedAt DATETIME DEFAULT GETDATE(),
     EnteredBy NVARCHAR(255) DEFAULT 'system',
 
@@ -189,10 +193,15 @@ Key Fields:
 - LaborCategory: Role or title within the project.
 - Organization: Business unit or command affiliation.
 - Role: User access level (e.g., 'admin', 'user', 'viewer').
+- PasswordHash: SHA-256 hash of the user’s login password (never store plain-text passwords).
+- CreatedAt: Timestamp when record was created.
+- EnteredBy: Audit trail to track the data source or user that added the record.
 
 Why?
-Supports login via email, cleanly separates authentication from core reporting data,
-and enables fine-grained access control. Also preserves flexibility for future SSO integration.
+- Enables secure email+password login for the Streamlit app.
+- Enforces role-based access to sensitive views or actions (e.g., dashboards, admin tools).
+- Cleanly separates authentication logic from reporting/timesheet data.
+- Flexible structure prepares for future enhancements like multi-factor auth or SSO integration.
 
 Usage:
 - Used during Streamlit login to validate allowed users.
@@ -211,3 +220,5 @@ Relational Integrity:
 - One workstream → many weekly reports and hours.
 - Referential integrity via foreign keys.
 - Clean, normalized structure for easy analytics.
+
+
