@@ -190,6 +190,141 @@ form_ready = (
     and has_required_fields(weekly_df)
 )
 
+def insert_weekly(cleaned_df):
+    import logging
+    from sqlalchemy import MetaData, Table
+    from utils.db import get_engine
+    from utils.helpers import (
+        clean_dataframe_dates_hours,
+        normalize_text,
+        get_or_create_employee,
+        get_or_create_workstream
+    )
+
+    metadata = MetaData()
+    engine = get_engine()
+    weekly_table = Table("WeeklyReports", metadata, autoload_with=engine)
+    hours_table = Table("HoursTracking", metadata, autoload_with=engine)
+
+    df = cleaned_df.rename(columns=weekly_report_col_map)
+    df = clean_dataframe_dates_hours(
+        df,
+        date_cols=["weekstartdate", "datecompleted"],
+        numeric_cols=["hoursworked"]
+    )
+    df["effortpercentage"] = (df["hoursworked"] / 40) * 100
+
+    with engine.begin() as conn:
+        unique_employees = df["contractorname"].dropna().unique()
+        employee_cache = {
+            name: get_or_create_employee(
+                contractor_name=name,
+                vendor=normalize_text(df[df["contractorname"] == name]["vendorname"].iloc[0]),
+                laborcategory=normalize_text(df[df["contractorname"] == name]["laborcategory"].iloc[0])
+            )
+            for name in unique_employees
+        }
+
+        unique_workstreams = df["workstream_name"].dropna().unique()
+        workstream_cache = {
+            name: get_or_create_workstream(conn=conn, workstream_name=normalize_text(name))
+            for name in unique_workstreams
+        }
+
+        week_start_dates = tuple(df["weekstartdate"].dropna().unique())
+        employee_ids = tuple(employee_cache.values())
+        existing_keys = set(
+            conn.execute(
+                text("""SELECT EmployeeID, WeekStartDate, WorkProductTitle 
+                        FROM WeeklyReports 
+                        WHERE WeekStartDate IN :weeks AND EmployeeID IN :emp_ids"""),
+                {"weeks": week_start_dates, "emp_ids": employee_ids}
+            ).fetchall()
+        )
+
+        weekly_data, hours_data = [], []
+        duplicates, invalid_rows, inserted_rows = [], [], []
+
+        for idx, row in df.iterrows():
+            required_fields = ["contractorname", "vendorname", "laborcategory", "workstream_name"]
+            missing = any(pd.isna(row[f]) or row[f] == "" for f in required_fields)
+
+            contractor = row['contractorname']
+            emp_id = employee_cache.get(contractor)
+            ws_name = normalize_text(row['workstream_name'])
+            ws_id = workstream_cache.get(ws_name)
+
+            key = (emp_id, row['weekstartdate'], normalize_text(row.get("workproducttitle", "")))
+
+            accomplishments = [
+                normalize_text(row[f"accomplishment{i}"])
+                for i in range(1, 6)
+                if pd.notna(row[f"accomplishment{i}"]) and row[f"accomplishment{i}"] != ""
+            ]
+
+            if key in existing_keys:
+                duplicates.append(row)
+                continue
+            if missing or emp_id is None or ws_id is None or len(accomplishments) != 5:
+                invalid_rows.append(row)
+                continue
+
+            def safe_val(value):
+                return normalize_text(value) if pd.notna(value) else "N/A"
+
+            weekly_data.append({
+                "EmployeeID": emp_id,
+                "WorkstreamID": ws_id,
+                "WeekStartDate": row["weekstartdate"],
+                "DivisionCommand": safe_val(row.get("divisioncommand", "")),
+                "WorkProductTitle": safe_val(row.get("workproducttitle", "")),
+                "ContributionDescription": "; ".join(accomplishments),
+                "Status": safe_val(row.get("status", "")),
+                "PlannedOrUnplanned": safe_val(row.get("plannedorunplanned", "")),
+                "DateCompleted": row["datecompleted"],
+                "DistinctNFR": safe_val(row.get("distinctnfr", "")),
+                "DistinctCAP": safe_val(row.get("distinctcap", "")),
+                "EffortPercentage": row["effortpercentage"],
+                "ContractorName": contractor,
+                "GovtTAName": safe_val(row.get("govttaname", "")),
+                "Accomplishment1": safe_val(row.get("accomplishment1", "")),
+                "Accomplishment2": safe_val(row.get("accomplishment2", "")),
+                "Accomplishment3": safe_val(row.get("accomplishment3", "")),
+                "Accomplishment4": safe_val(row.get("accomplishment4", "")),
+                "Accomplishment5": safe_val(row.get("accomplishment5", "")),
+                "CreatedAt": datetime.now(timezone.utc),
+                "EnteredBy": "anonymous"
+            })
+
+            if pd.notna(row["hoursworked"]) and row["hoursworked"] > 0:
+                hours_data.append({
+                    "EmployeeID": emp_id,
+                    "WorkstreamID": ws_id,
+                    "ReportingWeek": row["weekstartdate"],
+                    "HoursWorked": row["hoursworked"],
+                    "LevelOfEffort": row["effortpercentage"],
+                    "CreatedAt": datetime.now(timezone.utc),
+                    "EnteredBy": "anonymous"
+                })
+
+            inserted_rows.append(row)
+
+        if weekly_data:
+            conn.execute(weekly_table.insert(), weekly_data)
+        if hours_data:
+            conn.execute(hours_table.insert(), hours_data)
+
+    try:
+        from utils.db import load_table
+        load_table.clear()
+        load_table("WeeklyReports")
+        load_table("HoursTracking")
+        logging.info(f"Inserted: {len(inserted_rows)}, Skipped: {len(duplicates)}, Invalid: {len(invalid_rows)}")
+    except Exception as e:
+        st.warning(f"Post-submission refresh failed: {e}")
+
+    return inserted_rows, duplicates, invalid_rows
+
 if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_ready):
     if session_data is None:
         st.warning("⚠️ Database is offline. Please try again later.")
@@ -203,160 +338,27 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
 
             if not invalid.empty:
                 st.error(
-                    "🚨 Submission blocked: "
-                    + "; ".join(
+                    "🚨 Submission blocked: " +
+                    "; ".join(
                         f"{row['contractorname']} (Week {row['weekstartdate']}) "
                         f"has only {row['total_accomplishments']} accomplishments"
                         for _, row in invalid.iterrows()
                     )
                 )
             else:
-                try:
-                    def insert_weekly():
-                        import logging
-                        metadata = MetaData()
-                        engine = get_engine()
-                        weekly_table = Table("WeeklyReports", metadata, autoload_with=engine)
-                        hours_table = Table("HoursTracking", metadata, autoload_with=engine)
-                    
-                        df = cleaned_df.rename(columns=weekly_report_col_map)
-                        df = clean_dataframe_dates_hours(
-                            df,
-                            date_cols=["weekstartdate", "datecompleted"],
-                            numeric_cols=["hoursworked"]
-                        )
-                        df["effortpercentage"] = (df["hoursworked"] / 40) * 100
-                    
-                        with engine.begin() as conn:
-                            # Pre-cache Employees
-                            unique_employees = df["contractorname"].dropna().unique()
-                            employee_cache = {
-                                name: get_or_create_employee(
-                                    contractor_name=name,
-                                    vendor=normalize_text(df[df["contractorname"] == name]["vendorname"].iloc[0]),
-                                    laborcategory=normalize_text(df[df["contractorname"] == name]["laborcategory"].iloc[0])
-                                )
-                                for name in unique_employees
-                            }
-                    
-                            # Pre-cache Workstreams
-                            unique_workstreams = df["workstream_name"].dropna().unique()
-                            workstream_cache = {
-                                name: get_or_create_workstream(conn=conn, workstream_name=normalize_text(name))
-                                for name in unique_workstreams
-                            }
-                    
-                            # Scope the existing key check
-                            week_start_dates = tuple(df["weekstartdate"].dropna().unique())
-                            employee_ids = tuple(employee_cache.values())
-                            existing_keys = set(
-                                conn.execute(
-                                    text("""SELECT EmployeeID, WeekStartDate, WorkProductTitle 
-                                            FROM WeeklyReports 
-                                            WHERE WeekStartDate IN :weeks AND EmployeeID IN :emp_ids"""),
-                                    {"weeks": week_start_dates, "emp_ids": employee_ids}
-                                ).fetchall()
-                            )
-                    
-                            weekly_data, hours_data = [], []
-                            duplicates, invalid_rows, inserted_rows = [], [], []
-                    
-                            for idx, row in df.iterrows():
-                                required_fields = ["contractorname", "vendorname", "laborcategory", "workstream_name"]
-                                missing = any(pd.isna(row[f]) or row[f] == "" for f in required_fields)
-                    
-                                contractor = row['contractorname']
-                                emp_id = employee_cache.get(contractor)
-                                ws_name = normalize_text(row['workstream_name'])
-                                ws_id = workstream_cache.get(ws_name)
-                    
-                                key = (emp_id, row['weekstartdate'], normalize_text(row.get("workproducttitle", "")))
-                    
-                                accomplishments = [
-                                    normalize_text(row[f"accomplishment{i}"])
-                                    for i in range(1, 6)
-                                    if pd.notna(row[f"accomplishment{i}"]) and row[f"accomplishment{i}"] != ""
-                                ]
-                    
-                                if key in existing_keys:
-                                    duplicates.append(row)
-                                    continue
-                                if missing or emp_id is None or ws_id is None or len(accomplishments) != 5:
-                                    invalid_rows.append(row)
-                                    continue
-                    
-                                contribution_description = "; ".join(accomplishments)
-                    
-                                def safe_val(value):
-                                    return normalize_text(value) if pd.notna(value) else "N/A"
-                    
-                                weekly_data.append({
-                                    "EmployeeID": emp_id,
-                                    "WorkstreamID": ws_id,
-                                    "WeekStartDate": row["weekstartdate"],
-                                    "DivisionCommand": safe_val(row.get("divisioncommand", "")),
-                                    "WorkProductTitle": safe_val(row.get("workproducttitle", "")),
-                                    "ContributionDescription": contribution_description,
-                                    "Status": safe_val(row.get("status", "")),
-                                    "PlannedOrUnplanned": safe_val(row.get("plannedorunplanned", "")),
-                                    "DateCompleted": row["datecompleted"],
-                                    "DistinctNFR": safe_val(row.get("distinctnfr", "")),
-                                    "DistinctCAP": safe_val(row.get("distinctcap", "")),
-                                    "EffortPercentage": row["effortpercentage"],
-                                    "ContractorName": contractor,
-                                    "GovtTAName": safe_val(row.get("govttaname", "")),
-                                    "Accomplishment1": safe_val(row.get("accomplishment1", "")),
-                                    "Accomplishment2": safe_val(row.get("accomplishment2", "")),
-                                    "Accomplishment3": safe_val(row.get("accomplishment3", "")),
-                                    "Accomplishment4": safe_val(row.get("accomplishment4", "")),
-                                    "Accomplishment5": safe_val(row.get("accomplishment5", "")),
-                                    "CreatedAt": datetime.now(timezone.utc),
-                                    "EnteredBy": "anonymous"
-                                })
-                    
-                                if pd.notna(row["hoursworked"]) and row["hoursworked"] > 0:
-                                    hours_data.append({
-                                        "EmployeeID": emp_id,
-                                        "WorkstreamID": ws_id,
-                                        "ReportingWeek": row["weekstartdate"],
-                                        "HoursWorked": row["hoursworked"],
-                                        "LevelOfEffort": row["effortpercentage"],
-                                        "CreatedAt": datetime.now(timezone.utc),
-                                        "EnteredBy": "anonymous"
-                                    })
-                    
-                                inserted_rows.append(row)
-                    
-                            if weekly_data:
-                                conn.execute(weekly_table.insert(), weekly_data)
-                            if hours_data:
-                                conn.execute(hours_table.insert(), hours_data)
-                    
-                        # UI feedback + optional logging
-                        if inserted_rows:
-                            st.success(f"✅ {len(inserted_rows)} reports submitted successfully.")
-                        if duplicates:
-                            st.info(f"ℹ️ {len(duplicates)} duplicates skipped.")
-                            st.dataframe(pd.DataFrame(duplicates))
-                        if invalid_rows:
-                            st.warning(f"🚫 {len(invalid_rows)} reports skipped due to missing fields or accomplishments.")
-                            st.dataframe(pd.DataFrame(invalid_rows))
-                            st.session_state["weekly_df"] = pd.DataFrame(invalid_rows)
-                        else:
-                            st.session_state["weekly_df"] = pd.DataFrame([{col: "" for col in weekly_columns}])
-                    
-                        try:
-                            from utils.db import load_table
-                            load_table.clear()
-                            load_table("WeeklyReports")
-                            load_table("HoursTracking")
-                        
-                            logging.info(f"Inserted: {len(inserted_rows)}, Skipped: {len(duplicates)}, Invalid: {len(invalid_rows)}")
-                        
-                        except Exception as e:
-                            st.warning(f"Post-submission refresh failed: {e}")
+                inserted, duplicates, invalids = insert_weekly(cleaned_df)
 
-
+                if inserted:
+                    st.success(f"✅ {len(inserted)} reports submitted successfully.")
+                if duplicates:
+                    st.info(f"ℹ️ {len(duplicates)} duplicates skipped.")
+                    st.dataframe(pd.DataFrame(duplicates))
+                if invalids:
+                    st.warning(f"🚫 {len(invalids)} reports skipped due to missing fields or accomplishments.")
+                    st.dataframe(pd.DataFrame(invalids))
+                    st.session_state["weekly_df"] = pd.DataFrame(invalids)
+                else:
+                    st.session_state["weekly_df"] = pd.DataFrame([{col: "" for col in weekly_columns}])
 
 ########################################
 # Helper function for testing purposes 
