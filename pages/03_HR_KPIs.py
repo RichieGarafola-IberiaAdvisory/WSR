@@ -7,9 +7,7 @@ from datetime import date
 
 from utils.db import get_engine, get_data, load_all_data
 from utils.helpers import normalize_text
-
-
-
+from utils.auth import login_form, account_box, require_role
 
 ############################
 # --- Page Configuration ---
@@ -19,8 +17,6 @@ st.set_page_config(
      page_title="HR Dashboard", 
      # wide layout for more screen space
      layout="wide")
-
-
 
 st.markdown("""
     <style>
@@ -45,6 +41,15 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+########################
+# ---- Auth gate ----
+########################
+if not st.session_state.get("authenticated"):
+    login_form()
+    st.stop()
+account_box()
+require_role(["admin"])
+
 
 #######################
 # --- Logo Display ---
@@ -58,6 +63,7 @@ st.image("images/Iberia-Advisory.png", width=250)
 # Display the main title and a short description below it
 st.title("HR Management Dashboard")
 st.caption("Track contractor activity, coverage, and labor category distribution.")
+
 
 ##########################
 # --- Refresh Button ---
