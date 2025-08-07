@@ -166,18 +166,7 @@ if df.empty:
     st.info("Once the database is restored, contractor activity and KPIs will be displayed here.")
     st.stop()
 
-@st.cache_data(ttl=8 * 3600)
-def get_expected_contractors():
-    try:
-        employees_df = get_data("Employees")
-        if employees_df.empty:
-            return set()
-        return {normalize_text(name) for name in employees_df["Name"].dropna().unique()}
-    except Exception:
-        return set()
-
-expected_contractors = get_expected_contractors()
-    
+   
 ############################
 # --- Data Cleaning ---
 ############################
