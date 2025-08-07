@@ -370,7 +370,7 @@ def submit_form(name, vendor, labor_category, week_ending):
         if isinstance(week_ending, str):
             datetime.datetime.strptime(week_ending, "%Y-%m-%d")
     except Exception:
-        return False
+        return False  # ✅ <- Required to complete the try-except block
 
     emp_id = helpers.get_or_create_employee(None, name, vendor, labor_category)
     if not emp_id:
