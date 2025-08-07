@@ -345,13 +345,16 @@ if st.button("Submit Weekly Reports", key="submit_weekly", disabled=not form_rea
                         else:
                             st.session_state["weekly_df"] = pd.DataFrame([{col: "" for col in weekly_columns}])
                     
-                        # 🔁 Avoid full reload — just refresh affected tables
-                        from utils.db import load_table
-                        load_table.clear()
-                        load_table("WeeklyReports")
-                        load_table("HoursTracking")
-                    
-                        logging.info(f"Inserted: {len(inserted_rows)}, Skipped: {len(duplicates)}, Invalid: {len(invalid_rows)}")
+                        try:
+                            from utils.db import load_table
+                            load_table.clear()
+                            load_table("WeeklyReports")
+                            load_table("HoursTracking")
+                        
+                            logging.info(f"Inserted: {len(inserted_rows)}, Skipped: {len(duplicates)}, Invalid: {len(invalid_rows)}")
+                        
+                        except Exception as e:
+                            st.warning(f"Post-submission refresh failed: {e}")
 
 
 
