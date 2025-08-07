@@ -1,7 +1,6 @@
 -- Drop tables in correct dependency order
 IF OBJECT_ID('HoursTracking', 'U') IS NOT NULL DROP TABLE HoursTracking;
 IF OBJECT_ID('WeeklyReports', 'U') IS NOT NULL DROP TABLE WeeklyReports;
-IF OBJECT_ID('Accomplishments', 'U') IS NOT NULL DROP TABLE Accomplishments;
 IF OBJECT_ID('Workstreams', 'U') IS NOT NULL DROP TABLE Workstreams;
 IF OBJECT_ID('Employees', 'U') IS NOT NULL DROP TABLE Employees;
 
@@ -30,40 +29,26 @@ CREATE TABLE Workstreams (
     EnteredBy NVARCHAR(255) DEFAULT 'system'
 );
 
--- ========================
--- Accomplishments Table
--- ========================
-CREATE TABLE Accomplishments (
-    AccomplishmentID INT IDENTITY(1,1) PRIMARY KEY,
-    EmployeeID INT NOT NULL,
-    WorkstreamID INT NULL,
-    DateRange NVARCHAR(50),
-    Description NVARCHAR(MAX) NOT NULL,
-    -- Computed hash column for uniqueness
-    DescriptionHash AS CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', Description), 2) PERSISTED,
-    CreatedAt DATETIME DEFAULT GETDATE(),
-    EnteredBy NVARCHAR(255) DEFAULT 'system',
-
-    CONSTRAINT FK_Accomplishments_Employees FOREIGN KEY (EmployeeID)
-        REFERENCES Employees(EmployeeID) ON DELETE CASCADE,
-    CONSTRAINT FK_Accomplishments_Workstreams FOREIGN KEY (WorkstreamID)
-        REFERENCES Workstreams(WorkstreamID) ON DELETE SET NULL
-);
-
--- Add Unique Index to Prevent Duplicates (safe hash-based)
-CREATE UNIQUE INDEX UQ_Accomplishments
-ON Accomplishments(EmployeeID, WorkstreamID, DateRange, DescriptionHash);
+-- Insert a default workstream
+IF NOT EXISTS (
+    SELECT 1 FROM Workstreams WHERE Name = 'Unassigned'
+)
+BEGIN
+    INSERT INTO Workstreams (Name, Description, CreatedAt, EnteredBy)
+    VALUES ('Unassigned', 'Default placeholder for uncategorized tasks', GETDATE(), 'system');
+END;
 
 -- ========================
--- Weekly Reports Table
+-- WeeklyReports Table (Unified)
 -- ========================
 CREATE TABLE WeeklyReports (
     ReportID INT IDENTITY(1,1) PRIMARY KEY,
     EmployeeID INT NOT NULL,
+    WorkstreamID INT NOT NULL,
     WeekStartDate DATE NOT NULL,
     DivisionCommand NVARCHAR(255),
     WorkProductTitle NVARCHAR(255) NOT NULL,
-    ContributionDescription NVARCHAR(MAX),
+    ContributionDescription NVARCHAR(MAX), -- auto-populated from accomplishments
     Status NVARCHAR(100),
     PlannedOrUnplanned NVARCHAR(50),
     DateCompleted DATE,
@@ -72,23 +57,32 @@ CREATE TABLE WeeklyReports (
     EffortPercentage DECIMAL(5,2),
     ContractorName NVARCHAR(255),
     GovtTAName NVARCHAR(255),
+
+    -- Mandatory 5 accomplishment fields
+    Accomplishment1 NVARCHAR(MAX) NOT NULL,
+    Accomplishment2 NVARCHAR(MAX) NOT NULL,
+    Accomplishment3 NVARCHAR(MAX) NOT NULL,
+    Accomplishment4 NVARCHAR(MAX) NOT NULL,
+    Accomplishment5 NVARCHAR(MAX) NOT NULL,
+
     CreatedAt DATETIME DEFAULT GETDATE(),
     EnteredBy NVARCHAR(255) DEFAULT 'system',
 
     CONSTRAINT FK_WeeklyReports_Employees FOREIGN KEY (EmployeeID)
-        REFERENCES Employees(EmployeeID) ON DELETE CASCADE
+        REFERENCES Employees(EmployeeID) ON DELETE CASCADE,
+    CONSTRAINT FK_WeeklyReports_Workstreams FOREIGN KEY (WorkstreamID)
+        REFERENCES Workstreams(WorkstreamID) ON DELETE CASCADE
 );
 
-
 -- ========================
--- Hours Tracking Table
+-- HoursTracking Table
 -- ========================
 CREATE TABLE HoursTracking (
     EntryID INT IDENTITY(1,1) PRIMARY KEY,
-    EmployeeID INT,
-    WorkstreamID INT,
-    ReportingWeek DATE,
-    HoursWorked DECIMAL(5,2),
+    EmployeeID INT NOT NULL,
+    WorkstreamID INT NOT NULL,
+    ReportingWeek DATE NOT NULL,
+    HoursWorked DECIMAL(5,2) NOT NULL,
     LevelOfEffort DECIMAL(5,2),
     CreatedAt DATETIME DEFAULT GETDATE(),
     EnteredBy NVARCHAR(255) DEFAULT 'system',
@@ -96,136 +90,124 @@ CREATE TABLE HoursTracking (
     CONSTRAINT FK_HoursTracking_Employees FOREIGN KEY (EmployeeID)
         REFERENCES Employees(EmployeeID),
     CONSTRAINT FK_HoursTracking_Workstreams FOREIGN KEY (WorkstreamID)
-        REFERENCES Workstreams(WorkstreamID));
+        REFERENCES Workstreams(WorkstreamID)
+);
+
+
+-- ========================
+-- Roster Table (Auth + RBAC + Linked to Employees)
+-- ========================
+CREATE TABLE Roster (
+    RosterID INT IDENTITY(1,1) PRIMARY KEY,
+    EmployeeID INT NULL, -- Link to Employees
+    Email NVARCHAR(255) NOT NULL UNIQUE,
+    FirstName NVARCHAR(100),
+    LastName NVARCHAR(100),
+    Supervisor NVARCHAR(255),
+    ProjectName NVARCHAR(255),
+    LaborCategory NVARCHAR(255),
+    Organization NVARCHAR(255),
+    Role NVARCHAR(50) DEFAULT 'user', -- e.g., admin, user, viewer
+    CreatedAt DATETIME DEFAULT GETDATE(),
+    EnteredBy NVARCHAR(255) DEFAULT 'system',
+
+    CONSTRAINT FK_Roster_Employees FOREIGN KEY (EmployeeID)
+        REFERENCES Employees(EmployeeID) ON DELETE SET NULL
+);
 
 
 ---
 
-This schema supports the Iberia Performance Tracker’s goals: clean data, efficient relationships, and extensibility for future reporting or analytics.
+-- ========================
+-- Documentation
+-- ========================
+-- This schema supports the Iberia Performance Tracker’s goals: 
+-- unified weekly reporting, simplified data entry, and cleaner reporting.
 
 1. Employees
-Purpose: Central registry of unique personnel (contractors/staff), normalized to prevent duplicates and preserve referential integrity across reports.
+Purpose: Central registry of personnel, normalized to prevent duplicates.
 
 Key Fields:
-
-EmployeeID: Auto-incremented primary key.
-
-Name: Full name of the contractor (normalized via form input).
-
-VendorName: Company/vendor the contractor is associated with (default: "Unknown Vendor").
-
-LaborCategory: Role or title (default: "Unknown Role").
-
-PublicID: Human-readable identifier like GARAFOLA-RICHIE-042.
-
-UniqueKey: SHA-256 hash used to prevent duplicate employee entries across re-uploads.
+- EmployeeID: Auto-incremented primary key.
+- Name: Contractor full name (normalized).
+- VendorName: Associated company/vendor.
+- LaborCategory: Contractor role/title.
+- PublicID: Human-readable identifier like GARAFOLA-RICHIE-042.
+- UniqueKey: SHA-256 hash to prevent duplicates.
 
 Why?
-Maintains a single source of truth for all personnel, ensuring consistency across reports and dashboards. Prevents duplicate records when data is reuploaded or inconsistently entered.
+Ensures consistent, unique personnel tracking across reports.
 
 2. Workstreams
-Purpose: Defines broader categories of work that accomplishments align to (e.g., major initiatives, focus areas).
+Purpose: Defines work categories to align reports and accomplishments.
 
 Key Fields:
-
-WorkstreamID: Primary key.
-
-Name: Short label (e.g., “Strategy Ops”).
-
-Description: Optional explanation of the workstream's scope or purpose.
+- WorkstreamID: Primary key.
+- Name: Label (e.g., “Strategy Ops”).
+- Description: Optional context.
 
 Why?
-Provides context for qualitative accomplishments, enabling grouped reporting on strategic themes or functional tracks.
+Supports grouping of reports and accomplishments by theme.
 
-3. Accomplishments
-Purpose: Tracks weekly qualitative contributions, such as deliverables, milestones, or team impact narratives.
+3. WeeklyReports (Unified)
+Purpose: Tracks both structured weekly metrics and qualitative accomplishments.
 
 Key Fields:
-
-AccomplishmentID: Primary key.
-
-EmployeeID: Foreign key → Employees.EmployeeID.
-
-WorkstreamID: Foreign key → Workstreams.WorkstreamID (nullable).
-
-DateRange: Textual week indicator (e.g., 07/22/2025).
-
-Description: One of up to 5 accomplishments submitted per week.
+- EmployeeID → Employees.
+- WorkstreamID → Workstreams.
+- WeekStartDate, DivisionCommand, WorkProductTitle, Status, etc.
+- Accomplishment1-5: Weekly qualitative contributions.
+- ContributionDescription: Auto-populated summary from accomplishments.
 
 Why?
-Enables qualitative performance tracking, separate from quantitative reports. Fully normalized and allows multiple entries per contractor per week. Prevents duplicate rows (same employee, week, workstream, and description)
+Merges structured data with qualitative inputs for single-source reporting.
+Removes need for a separate Accomplishments table.
 
-4. WeeklyReports
-Purpose: Captures structured, recurring activity and performance metrics for each employee, typically submitted weekly.
+4. HoursTracking
+Purpose: Captures numeric labor effort for billing/auditing.
 
 Key Fields:
-
-ReportID: Primary key.
-
-EmployeeID: Foreign key → Employees.EmployeeID.
-
-WeekStartDate: Start of the reporting week.
-
-DivisionCommand, WorkProductTitle, ContributionDescription: What was worked on and why.
-
-Status: Progress of the work (e.g., "Complete", "In Progress").
-
-PlannedOrUnplanned: Compliance with monthly planning.
-
-DateCompleted, DistinctNFR, DistinctCAP: Optional metadata.
-
-EffortPercentage: Derived from hours, estimates percent effort.
-
-ContractorName, GovtTAName: Redundant for reporting traceability.
+- EmployeeID → Employees.
+- WorkstreamID → Workstreams.
+- ReportingWeek, HoursWorked, LevelOfEffort.
 
 Why?
-Facilitates structured weekly tracking of performance, enabling KPI dashboards, compliance checks, and performance analytics.
+Supports detailed labor accounting while keeping WeeklyReports focused on deliverables and qualitative performance.
 
-5. HoursTracking
 
-Purpose:
-Captures granular, numeric logging of time worked, useful for contracts that require billable hours, level-of-effort tracking, or external audit purposes.
+5. Roster
+Purpose: Centralized personnel registry supporting authentication and role-based access control (RBAC).
+Also links to the Employees table when identity resolution is possible.
 
 Key Fields:
-
-    EntryID: Auto-incremented primary key.
-
-    EmployeeID: Foreign key → Employees.EmployeeID.
-
-    WorkstreamID (optional): Foreign key → Workstreams.WorkstreamID, allows categorization by major work themes.
-
-    ReportingWeek: Start date of the week the hours apply to (typically a Monday).
-
-    HoursWorked: Exact number of hours logged by the contractor for that week (e.g., 38.5).
-
-    LevelOfEffort: Calculated percentage of a standard 40-hour work week (e.g., 95.0 for 38/40).
+- RosterID: Internal unique ID for tracking.
+- EmployeeID: Foreign key to Employees table (nullable to allow unmatched records).
+- Email: Unique login identifier; used for authentication.
+- FirstName, LastName: Human-readable names for matching and admin views.
+- Supervisor: Associated supervisor or team lead.
+- ProjectName: Contract or task order alignment.
+- LaborCategory: Role or title within the project.
+- Organization: Business unit or command affiliation.
+- Role: User access level (e.g., 'admin', 'user', 'viewer').
 
 Why?
-Supports detailed labor accounting separate from qualitative narratives or accomplishments. This structure is ideal for contracts that require:
+Supports login via email, cleanly separates authentication from core reporting data,
+and enables fine-grained access control. Also preserves flexibility for future SSO integration.
 
-    Time-based billing
+Usage:
+- Used during Streamlit login to validate allowed users.
+- Assigns RBAC-based access via the 'Role' field.
+- Automatically linked to Employees table where identity matches (for unified analytics).
 
-    Audit trails
-
-    Performance analytics by workstream or individual
-
-    Separation of raw effort metrics from qualitative deliverables
-
-The normalized design avoids duplication and enforces referential integrity through foreign keys.
+Notes:
+- Emails must be unique for login integrity.
+- EmployeeID linkage is optional and maintained via matching script or ETL logic.
+- Designed for extensibility (additional auth fields, flags, audit trails).
 
 
-Relational Integrity & Normalization
-One employee → many reports, accomplishments, and hour entries
 
-One workstream → many accomplishments
-
-No data duplication across employees or reports
-
-Enforced with:
-
-FOREIGN KEY constraints
-
-ON DELETE CASCADE / SET NULL for graceful cleanup
-
-Indexed EmployeeID, WeekStartDate, and UniqueKey for performance
-________________________________________
+Relational Integrity:
+- One employee → many weekly reports and hours.
+- One workstream → many weekly reports and hours.
+- Referential integrity via foreign keys.
+- Clean, normalized structure for easy analytics.
