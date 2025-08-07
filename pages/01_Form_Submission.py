@@ -20,6 +20,13 @@ from utils.helpers import (
     normalize_text
 )
 
+from utils.auth import (
+    login_form, 
+    account_box,
+    require_login, 
+    require_role
+)
+
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -30,6 +37,16 @@ st.set_page_config(page_title="Weekly Form Submission", layout="wide")
 st.image("images/Iberia-Advisory.png", width=250)
 
 st.title("Weekly Form Submission Portal")
+
+##########################
+# ---- Auth gate ----
+##########################
+if not st.session_state.get("authenticated"):
+    login_form()
+    st.stop()
+account_box()
+require_role(["user", "admin"])
+
 st.caption("Each contractor must have exactly 5 accomplishments per week.")
 
 # Load cached session data
