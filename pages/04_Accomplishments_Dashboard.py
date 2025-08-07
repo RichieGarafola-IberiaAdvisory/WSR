@@ -4,6 +4,7 @@ import plotly.express as px
 
 from utils.db import get_data, load_all_data
 from utils.helpers import normalize_text
+from utils.auth import login_form, account_box, require_role
 
 # ----------------------------
 # Page Setup
@@ -17,6 +18,16 @@ st.markdown("""
         hr { border-top: 2px solid #1E90FF; }
     </style>
 """, unsafe_allow_html=True)
+
+#######################
+# ---- Auth gate ----
+########################
+if not st.session_state.get("authenticated"):
+    login_form()
+    st.stop()
+account_box()
+require_role(["user", "viewer", "admin"])
+
 st.title("Accomplishments Dashboard")
 st.caption("Explore weekly accomplishments across teams and workstreams.")
 
