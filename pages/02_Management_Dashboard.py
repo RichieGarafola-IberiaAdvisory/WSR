@@ -4,9 +4,6 @@ import pandas as pd  # For working with tabular data
 import plotly.express as px  # For creating visualizations
 import re  # For text cleaning using regular expressions
 
-# Import shared modules
-from utils.db import get_data
-
 ############################
 # --- Page Configuration ---
 ############################
@@ -77,51 +74,57 @@ if st.button("🔄 Refresh Data"):
 
 # df = load_weekly_data()
 
-@st.cache_data(ttl=600) # 8 * 3600 (8hrs)
-def get_weekly_df():
-    try:
-        from utils.db import load_table
-        df = load_table("WeeklyReports")
-        employees_df = load_table("Employees")
+def fetch_weekly_data():
+    from utils.db import load_table
+    weekly_df = load_table("WeeklyReports")
+    employees_df = load_table("Employees")
 
-        # Handle different column names for Reporting Week
-        if "weekstartdate" in df.columns:
-            df.rename(columns={"weekstartdate": "Reporting Week"}, inplace=True)
-        elif "WeekStartDate" in df.columns:
-            df.rename(columns={"WeekStartDate": "Reporting Week"}, inplace=True)
-        elif "WeekEnding" in df.columns:
-            df.rename(columns={"WeekEnding": "Reporting Week"}, inplace=True)
-        else:
-            df["Reporting Week"] = pd.NaT  # Fallback column
+    # Normalize date column
+    if "weekstartdate" in weekly_df.columns:
+        weekly_df.rename(columns={"weekstartdate": "Reporting Week"}, inplace=True)
+    elif "WeekStartDate" in weekly_df.columns:
+        weekly_df.rename(columns={"WeekStartDate": "Reporting Week"}, inplace=True)
+    elif "WeekEnding" in weekly_df.columns:
+        weekly_df.rename(columns={"WeekEnding": "Reporting Week"}, inplace=True)
+    else:
+        weekly_df["Reporting Week"] = pd.NaT
 
+    # Merge employee details
+    df = weekly_df.merge(employees_df, how="left", on="EmployeeID")
 
-        # Join with employees
-        df = df.merge(
-            employees_df,
-            how="left",
-            left_on="EmployeeID",
-            right_on="EmployeeID"
-        )
+    # Rename for clarity
+    df.rename(columns={
+        "VendorName": "Vendor Name",
+        "DivisionCommand": "Division/Command",
+        "WorkProductTitle": "Work Product Title",
+        "EffortPercentage": "Level of Effort (%)",
+        "ContractorName": "Contractor (Last Name, First Name)",
+        "GovtTAName": "Govt TA (Last Name, First Name)",
+        "Status": "Work Product Status",
+        "PlannedOrUnplanned": "Planned or Unplanned"
+    }, inplace=True)
 
-        # Standardize other columns
-        df.rename(columns={
-            "VendorName": "Vendor Name",
-            "DivisionCommand": "Division/Command",
-            "WorkProductTitle": "Work Product Title",
-            "EffortPercentage": "Level of Effort (%)",
-            "ContractorName": "Contractor (Last Name, First Name)",
-            "GovtTAName": "Govt TA (Last Name, First Name)",
-            "Status": "Work Product Status",
-            "PlannedOrUnplanned": "Planned or Unplanned"
-        }, inplace=True)
-
-        return df
-    except Exception:
-        return pd.DataFrame()
+    return df
 
 
-df = get_weekly_df()
+@st.cache_data(ttl=3600, show_spinner="🔄 Loading dashboard data...")  # 1 hour cache
+def get_dashboard_data():
+    return fetch_weekly_data()
 
+
+# Allow user-triggered refresh
+if st.button("🔄 Refresh Data"):
+    get_dashboard_data.clear()
+    if "dashboard_df" in st.session_state:
+        del st.session_state["dashboard_df"]
+    st.rerun()
+
+
+# Load into session state once
+if "dashboard_df" not in st.session_state:
+    st.session_state["dashboard_df"] = get_dashboard_data()
+
+df = st.session_state["dashboard_df"]
 
 # Incase there is a missing dataset, provide a warning
 if df.empty:
