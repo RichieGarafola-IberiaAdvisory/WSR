@@ -1,8 +1,7 @@
 # Import the Streamlit library, to build the interactive web apps
 import streamlit as st
 import os
-# from utils import db
-# db.load_tables()
+from utils.auth import login_form, account_box 
 
 # Use polling instead of inotify for Streamlit Cloud to avoid watcher limits
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "poll"
@@ -35,6 +34,17 @@ if os.path.exists("images/Iberia-Advisory.png"):
 # Display the main title and a short description below it
 st.title("Team Performance Tracker")
 st.caption("A centralized tool for monitoring team contributions and workstream alignment at Iberia.")
+
+###############################################
+# ---- Auth gate ----
+###############################################
+if not st.session_state.get("authenticated"):
+    st.title("Team Performance Tracker")
+    login_form()
+    st.stop()
+
+# If we’re here, user is authenticated
+account_box()
 
 ######################
 # --- Main Layout ---
