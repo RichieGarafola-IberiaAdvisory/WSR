@@ -111,15 +111,6 @@ def fetch_weekly_data():
 def get_dashboard_data():
     return fetch_weekly_data()
 
-
-# Allow user-triggered refresh
-if st.button("🔄 Refresh Data", key="refresh_management"):
-    get_dashboard_data.clear()
-    if "dashboard_df" in st.session_state:
-        del st.session_state["dashboard_df"]
-    st.rerun()
-
-
 # Load into session state once
 if "dashboard_df" not in st.session_state:
     st.session_state["dashboard_df"] = get_dashboard_data()
