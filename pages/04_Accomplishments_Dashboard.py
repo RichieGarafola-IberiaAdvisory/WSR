@@ -100,13 +100,22 @@ if df.empty:
 # ----------------------------
 # Join Workstream names and handle missing vendor
 # ----------------------------
-workstreams = get_data("Workstreams")
+@st.cache_data(ttl=8 * 3600)
+def get_workstreams():
+    ws = get_data("Workstreams")
+    if not ws.empty:
+        return ws[["WorkstreamID", "Name"]].rename(columns={"Name": "WorkstreamName"})
+    return pd.DataFrame(columns=["WorkstreamID", "WorkstreamName"])
+
+workstreams = get_workstreams()
+
 if not workstreams.empty:
     df = df.merge(
-        workstreams[["WorkstreamID", "Name"]].rename(columns={"Name": "WorkstreamName"}),
+        workstreams,
         on="WorkstreamID",
         how="left"
     )
+
     df["Workstream"] = df["WorkstreamName"].astype(str).apply(normalize_text)
 else:
     df["Workstream"] = df["WorkstreamID"].astype(str).apply(normalize_text)
