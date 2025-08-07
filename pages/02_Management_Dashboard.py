@@ -52,7 +52,7 @@ st.caption("Visualize and filter team effort across vendors, divisions, and cont
 #################################
 # --- Refresh Data on Demand ---
 #################################
-if st.button("🔄 Refresh Data"):
+if st.button("🔄 Refresh Data", key="refresh_on_demand"):
     from utils.db import load_all_data
     load_all_data.clear()
     if "session_data" in st.session_state:
@@ -113,7 +113,7 @@ def get_dashboard_data():
 
 
 # Allow user-triggered refresh
-if st.button("🔄 Refresh Data"):
+if st.button("🔄 Refresh Data", key="refresh_management"):
     get_dashboard_data.clear()
     if "dashboard_df" in st.session_state:
         del st.session_state["dashboard_df"]
