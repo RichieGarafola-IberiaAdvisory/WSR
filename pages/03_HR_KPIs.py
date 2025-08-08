@@ -44,11 +44,11 @@ st.markdown("""
 ########################
 # ---- Auth gate ----
 ########################
-if not st.session_state.get("authenticated"):
-    login_form()
-    st.stop()
-account_box()
+# HR KPIs typically restricted — adjust if you want users to see it
 require_role(["admin"])
+
+with st.sidebar:
+    account_box()
 
 
 #######################
