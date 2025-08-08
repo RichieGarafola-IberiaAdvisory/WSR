@@ -58,11 +58,11 @@ st.caption("Visualize and filter team effort across vendors, divisions, and cont
 ##########################
 # ---- Auth gate ----
 ##########################
-if not st.session_state.get("authenticated"):
-    login_form()
-    st.stop()
-account_box()
-require_role(["viewer", "admin"])
+# Management dashboard is viewable by anyone logged in (viewer/user/admin)
+require_role(["viewer", "user", "admin"])
+
+with st.sidebar:
+    account_box()
 
 #################################
 # --- Refresh Data on Demand ---
