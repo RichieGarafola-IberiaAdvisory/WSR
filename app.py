@@ -20,7 +20,30 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-
+###############################################
+# ---- Auth gate (redirect to Login page) ----
+###############################################
+if not st.session_state.get("authenticated"):
+    # Try to send users to the dedicated login page (Streamlit >= 1.25)
+    try:
+        st.switch_page("pages/00_Login.py")
+    except Exception:
+        # Fallback: inline login if switch_page isn't available
+        st.set_page_config(page_title="Login - Team Performance Tracker", layout="centered", initial_sidebar_state="collapsed")
+        st.markdown(
+            """
+            <style>
+            section[data-testid="stSidebar"] {display: none;}
+            div[data-testid="stDecoration"] {display: none;}
+            footer {visibility: hidden;}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.title("🔐 Team Performance Tracker Login")
+        login_form()
+    st.stop()
+    
 #######################
 # --- Logo Display ---
 #######################
@@ -35,15 +58,7 @@ if os.path.exists("images/Iberia-Advisory.png"):
 st.title("Team Performance Tracker")
 st.caption("A centralized tool for monitoring team contributions and workstream alignment at Iberia.")
 
-###############################################
-# ---- Auth gate ----
-###############################################
-if not st.session_state.get("authenticated"):
-    st.title("Team Performance Tracker")
-    login_form()
-    st.stop()
-
-# If we’re here, user is authenticated
+# If we’re here, user is authenticated, show account box (profile, logout)
 account_box()
 
 ######################
