@@ -41,11 +41,11 @@ st.title("Weekly Form Submission Portal")
 ##########################
 # ---- Auth gate ----
 ##########################
-if not st.session_state.get("authenticated"):
-    login_form()
-    st.stop()
-account_box()
+# Submit page requires a regular user (or admin). Viewers are blocked.
 require_role(["user", "admin"])
+
+with st.sidebar:
+    account_box()
 
 st.caption("Each contractor must have exactly 5 accomplishments per week.")
 
