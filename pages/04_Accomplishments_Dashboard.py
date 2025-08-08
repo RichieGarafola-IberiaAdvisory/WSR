@@ -19,17 +19,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+st.title("Accomplishments Dashboard")
+st.caption("Explore weekly accomplishments across teams and workstreams.")
+
 #######################
 # ---- Auth gate ----
 ########################
-if not st.session_state.get("authenticated"):
-    login_form()
-    st.stop()
-account_box()
-require_role(["user", "viewer", "admin"])
+# Accomplishments dashboard is viewable by anyone logged in
+require_role(["viewer", "user", "admin"])
 
-st.title("Accomplishments Dashboard")
-st.caption("Explore weekly accomplishments across teams and workstreams.")
+with st.sidebar:
+    account_box()
 
 # ----------------------------
 # Refresh Button
