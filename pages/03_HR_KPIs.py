@@ -41,16 +41,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-########################
-# ---- Auth gate ----
-########################
-# HR KPIs typically restricted — adjust if you want users to see it
-require_role(["admin"])
-
-with st.sidebar:
-    account_box()
-
-
 #######################
 # --- Logo Display ---
 #######################
@@ -64,6 +54,14 @@ st.image("images/Iberia-Advisory.png", width=250)
 st.title("HR Management Dashboard")
 st.caption("Track contractor activity, coverage, and labor category distribution.")
 
+########################
+# ---- Auth gate ----
+########################
+# HR KPIs typically restricted — adjust if you want users to see it
+require_role(["admin"])
+
+with st.sidebar:
+    account_box()
 
 ##########################
 # --- Refresh Button ---
